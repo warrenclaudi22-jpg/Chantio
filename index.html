@@ -141,7 +141,8 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
 .line { background: var(--bg); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .line .rowl { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
 .line .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.line input, .line select { background: var(--surface); }
+.line input, .line select, .line textarea { background: var(--surface); }
+textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: vertical; overflow-y: auto; }
 .line .tot { font-family: var(--font-display); font-weight: 700; font-variant-numeric: tabular-nums; }
 .backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(8,20,30,.5); display: flex; align-items: flex-end; justify-content: center; }
 .sheet { background: var(--surface); width: min(680px, 100%); max-height: 90%; border-radius: 28px 28px 0 0; display: flex; flex-direction: column; }
@@ -483,7 +484,8 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
         (g !== 'reset' ? '<label class="f">E-mail<input id="a-email" type="email" inputmode="email" autocomplete="email" autocapitalize="none" value="' + esc(state.gateEmail || '') + '"></label>' : '') +
         (g !== 'forgot' ? '<label class="f">Mot de passe' + (g === 'login' ? '' : ' (8 caractères minimum)') + '<input id="a-pass" type="password" autocomplete="' + (g === 'login' ? 'current-password' : 'new-password') + '"></label>' : '') +
         '<button class="btn block" type="submit" id="a-go">' + btn[g] + '</button></form>' + links +
-        '<p class="kicker">Chaque compte a son espace privé : personne d\'autre ne voit tes documents.</p>';
+        '<p class="kicker">Chaque compte a son espace privé : personne d\'autre ne voit tes documents.</p>' +
+        '<p class="kicker"><a href="mentions-legales.html" target="_blank" rel="noopener">Mentions légales</a> · <a href="confidentialite.html" target="_blank" rel="noopener">Confidentialité</a></p>';
     }
     $('main').innerHTML = '<div class="gate"><div class="card">' + h + '</div></div>';
   }
@@ -592,7 +594,7 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
   function catalogueHtml() {
     var cat = state.profile.catalogue || [];
     return (cat.length ? cat.map(function (c) {
-      return '<div class="line" data-cid="' + c.id + '"><input data-cat="des" value="' + esc(c.des) + '" placeholder="Description de la prestation" autocomplete="off">' +
+      return '<div class="line" data-cid="' + c.id + '"><textarea class="des" rows="2" data-cat="des" placeholder="Description de la prestation">' + esc(c.des) + '</textarea>' +
         '<div class="rowc"><label class="f">Unité<select data-cat="unite">' + UNITES.map(function (u) { return '<option' + (u === c.unite ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label>' +
         '<label class="f">Prix unitaire (€)<input data-cat="pu" inputmode="decimal" value="' + esc(c.pu) + '"></label></div>' +
         '<div class="foot"><span></span><button class="icon-btn plain" data-act="cat-del" data-cid="' + c.id + '" type="button" aria-label="Supprimer">' + ic('trash', 20) + '</button></div></div>';
@@ -642,6 +644,7 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
         '<div class="card flat"><h2 class="h2">Mon compte</h2><p class="lead" style="margin:0">' +
         (state.mode === 'db' ? 'Connecté avec ' + esc((state.user && state.user.email) || '') + '. Tes documents sont enregistrés dans ton espace privé, visibles par toi seul.' : 'Mode démo : tes données restent uniquement sur cet appareil.') + '</p>' +
         '<p class="kicker" style="margin:0">Pense à exporter tes données de temps en temps pour garder une copie de sauvegarde.</p>' +
+        '<p class="kicker" style="margin:0"><a href="mentions-legales.html" target="_blank" rel="noopener">Mentions légales</a> · <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a></p>' +
         '<div class="row2"><button class="btn outline small" data-act="set-export" type="button">' + ic('download', 18) + ' Exporter mes données</button>' +
         (state.mode === 'db' ? '<button class="btn danger small" data-act="logout" type="button">Se déconnecter</button>' : '') + '</div></div>';
     }
@@ -724,7 +727,7 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
   function edLines() {
     var ls = ed.doc.lignes;
     $('ed-lines').innerHTML = ls.length ? ls.map(function (l) {
-      return '<div class="line" data-lid="' + l.id + '"><input data-l="des" value="' + esc(l.des) + '" placeholder="Description de la prestation" autocomplete="off">' +
+      return '<div class="line" data-lid="' + l.id + '"><textarea class="des" rows="2" data-l="des" placeholder="Description de la prestation">' + esc(l.des) + '</textarea>' +
         '<div class="rowl"><label class="f">Quantité<input data-l="qte" inputmode="decimal" value="' + esc(l.qte) + '"></label>' +
         '<label class="f">Unité<select data-l="unite">' + UNITES.map(function (u) { return '<option' + (u === l.unite ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label>' +
         '<label class="f">Prix unitaire<input data-l="pu" inputmode="decimal" value="' + esc(l.pu) + '"></label></div>' +
@@ -1304,8 +1307,11 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
     var g = e.target.closest('[data-go]'); if (g) { go(g.getAttribute('data-go')); return; }
     var b = e.target.closest('[data-act]'); if (b) onAct(b);
   });
+  function grow(t) { if (!t || t.tagName !== 'TEXTAREA' || !/\bdes\b/.test(t.className)) return; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight + 2, window.innerHeight * 0.6) + 'px'; }
+  function growAll() { var l = document.querySelectorAll('textarea.des'); for (var i = 0; i < l.length; i++) grow(l[i]); }
+  try { var gt = null; new MutationObserver(function () { clearTimeout(gt); gt = setTimeout(growAll, 30); }).observe(document.body, { childList: true, subtree: true }); } catch (e) { /* ignoré */ }
   document.addEventListener('input', function (e) {
-    var t = e.target;
+    var t = e.target; grow(t);
     if (t.id === 'q') { state.q = t.value; renderDocList(); return; }
     if (t.id === 'cq') { state.cq = t.value; renderClientList(); return; }
     if (t.id === 'cp-q') { cpList(t.value); return; }

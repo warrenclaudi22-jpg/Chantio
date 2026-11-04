@@ -1,7 +1,7 @@
 // Service worker de Chantio : ouverture rapide et fonctionnement de base hors connexion.
 // Les données de l'utilisateur ne sont jamais mises en cache ici (elles passent par Supabase).
-const CACHE = 'chantio-v1';
-const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
+const CACHE = 'chantio-v2';
+const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'mentions-legales.html', 'confidentialite.html', 'legal.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => Promise.allSettled(SHELL.map((u) => c.add(u)))).then(() => self.skipWaiting()));
