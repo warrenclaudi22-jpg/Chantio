@@ -142,6 +142,12 @@ nav.dock button.plus { width: 58px; height: 58px; border-radius: 50%; border: 0;
 .line .rowl { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
 .line .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .line input, .line select, .line textarea { background: var(--surface); }
+.rowl { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 8px; }
+.wzbar { height: 6px; background: var(--sky); border-radius: 3px; overflow: hidden; margin: 6px 0 14px; }
+.wzbar span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.wzq { font: 700 22px/1.25 var(--font-display); margin: 4px 0 2px; }
+.wzchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.wzline { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--bg); border-radius: 14px; padding: 10px 12px; font-size: 14px; }
 textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: vertical; overflow-y: auto; }
 .line .tot { font-family: var(--font-display); font-weight: 700; font-variant-numeric: tabular-nums; }
 .backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(8,20,30,.5); display: flex; align-items: flex-end; justify-content: center; }
@@ -182,6 +188,10 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .notice.ok { background: var(--good-soft); color: var(--good); }
 #acc { max-width: 62%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gate .card .lead { margin: 0; }
+.aimsgs { display: flex; flex-direction: column; gap: 8px; max-height: 38vh; overflow-y: auto; padding: 2px; }
+.bub { max-width: 90%; padding: 10px 12px; border-radius: 16px; font-size: 15px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.bub.me { align-self: flex-end; background: var(--accent); color: var(--on-accent, #fff); }
+.bub.ai { align-self: flex-start; background: var(--sky); }
 </style>
 </head>
 <body>
@@ -227,6 +237,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.9.2 5 2.4 5 5.8"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
     star: '<path d="M12 4l2.5 5.2 5.7.8-4.1 4 1 5.7L12 17l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/>',
     trash: '<path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/>',
@@ -526,7 +537,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     h += '<div class="stack"><div><h1 class="h1">Bonjour' + (p.nom ? ', ' + esc(p.nom) : '') + '</h1><p class="lead">Voici où en sont tes devis et tes factures.</p></div>';
     h += '<div class="hero"><div><div class="kicker">À encaisser</div><div class="big">' + fmt(sumFac(impayees)) + '</div>' +
       '<div class="kicker" style="margin-top:6px">' + impayees.length + ' facture' + (impayees.length > 1 ? 's' : '') + ' en attente' + (retard.length ? ' · <span style="color:var(--bad)">' + retard.length + ' en retard (' + fmt(sumFac(retard)) + ')</span>' : '') + '</div></div>' +
-      '<button class="btn" data-act="new-devis" type="button">' + ic('plus', 20) + ' Créer un devis</button></div>';
+      '<button class="btn" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 20) + ' Créer un devis</button></div>';
     h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(payees)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + '</div></div>' +
       '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + fmt(sumFac(attente)) + '</div><div class="sub">' + attente.length + ' devis envoyé' + (attente.length > 1 ? 's' : '') + '</div></div></div>';
     if (!docs.length || !state.clients.length || !p.siret) {
@@ -1198,6 +1209,163 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     } catch (e) { toast('Téléchargement impossible.'); }
   }
 
+
+  /* ---------- Assistant de devis (guidé) ---------- */
+  var wz = null;
+  var WZ_N = 5;
+  function wzBlankLine() { return { des: '', qte: '1', unite: 'm²', pu: '' }; }
+  function wzStart() { wz = { step: 0, doc: newDoc('devis'), line: wzBlankLine(), nc: { nom: '', tel: '' } }; wzRender(); }
+  function wzCommit() {
+    var l = wz.line;
+    if (!String(l.des).trim() && !num(l.pu)) return false;
+    wz.doc.lignes.push({ id: rid(), des: String(l.des).trim() || 'Prestation', qte: String(l.qte || '1'), unite: l.unite || 'u', pu: String(l.pu || '') });
+    wz.line = wzBlankLine(); return true;
+  }
+  function wzSet(f, v) {
+    var d = wz.doc;
+    if (f === 'cnom' || f === 'ctel') wz.nc[f.slice(1)] = v;
+    else if (f === 'objet') d.chantier.objet = v;
+    else if (f === 'adr') d.chantier.adresse = v;
+    else if (f.indexOf('l.') === 0) { wz.line[f.slice(2)] = v; var lt = $('wz-lt'); if (lt) lt.textContent = fmt(num(wz.line.qte) * num(wz.line.pu)); }
+    else if (f === 'remise' || f === 'acompte' || f === 'delai' || f === 'notes') d[f] = v;
+  }
+  function wzRender() {
+    var w = wz, d = w.doc, h = '<div class="kicker">Étape ' + (w.step + 1) + ' sur ' + WZ_N + '</div><div class="wzbar"><span style="width:' + ((w.step + 1) * 100 / WZ_N) + '%"></span></div>', focusSel = '';
+    if (w.step === 0) {
+      h += '<div class="wzq">Pour quel client ?</div>';
+      if (state.clients.length) {
+        h += '<div class="stack">' + state.clients.slice().sort(function (a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); }).slice(0, 40).map(function (c) {
+          return '<button type="button" class="item" style="box-shadow:none;background:var(--bg)" data-act="wz-client" data-id="' + c.id + '"><span class="ico">' + esc((c.nom || '?').charAt(0).toUpperCase()) + '</span><span class="mid-col"><span class="t">' + esc(c.nom) + '</span><span class="s">' + esc(c.adresse || c.tel || '') + '</span></span></button>';
+        }).join('') + '</div><p class="kicker">Ou un nouveau client :</p>';
+      }
+      h += '<label class="f">Nom du client<input data-wz="cnom" value="' + esc(w.nc.nom) + '" autocomplete="off" placeholder="Ex. Mme Dupont"></label>' +
+        '<label class="f">Téléphone (facultatif)<input data-wz="ctel" type="tel" value="' + esc(w.nc.tel) + '" autocomplete="off"></label>' +
+        '<button class="btn block" data-act="wz-newclient" type="button">Continuer</button>' +
+        '<button class="linkbtn" data-act="wz-skip-client" type="button">Je choisirai le client plus tard</button>';
+      focusSel = state.clients.length ? '' : '[data-wz="cnom"]';
+    } else if (w.step === 1) {
+      h += '<div class="wzq">Quels travaux ?</div>' + (d.client.nom ? '<p class="kicker">Client : ' + esc(d.client.nom) + '</p>' : '') +
+        '<label class="f">Objet des travaux<input data-wz="objet" value="' + esc(d.chantier.objet) + '" autocomplete="off" placeholder="Ex. Réfection de la toiture"></label>' +
+        '<label class="f">Adresse du chantier<input data-wz="adr" value="' + esc(d.chantier.adresse) + '" autocomplete="off"></label>' +
+        '<button class="btn block" data-act="wz-next" type="button">Suivant</button>';
+      focusSel = '[data-wz="objet"]';
+    } else if (w.step === 2) {
+      h += '<div class="wzq">' + (d.lignes.length ? 'Une autre prestation ?' : 'Quelle prestation ?') + '</div>';
+      if (d.lignes.length) h += '<div class="stack">' + d.lignes.map(function (l, i) {
+        return '<div class="wzline"><span>' + esc(String(l.des).split('\n')[0]) + '<br><span class="kicker">' + esc(l.qte) + ' ' + esc(l.unite) + ' × ' + fmt(num(l.pu)) + '</span></span><span style="display:flex;align-items:center;gap:6px"><b>' + fmt(lineTotal(l)) + '</b><button class="icon-btn" data-act="wz-del-line" data-i="' + i + '" type="button" aria-label="Retirer">' + ic('x', 18) + '</button></span></div>';
+      }).join('') + '</div>';
+      var cat = (state.profile.catalogue || []).filter(function (c) { return c.des; }).slice(0, 12);
+      if (cat.length) h += '<div class="kicker">Touche une prestation habituelle :</div><div class="wzchips">' + cat.map(function (c) { return '<button class="chip-acc" data-act="wz-cat" data-cid="' + c.id + '" type="button">' + esc(c.des) + '</button>'; }).join('') + '</div>';
+      h += '<label class="f">Description<textarea class="des" rows="2" data-wz="l.des" placeholder="Décris la prestation (tu peux dicter avec le micro du clavier)">' + esc(w.line.des) + '</textarea></label>' +
+        '<div class="rowl"><label class="f">Quantité<input data-wz="l.qte" inputmode="decimal" value="' + esc(w.line.qte) + '"></label>' +
+        '<label class="f">Unité<select data-wz="l.unite">' + UNITES.map(function (u) { return '<option' + (u === w.line.unite ? ' selected' : '') + '>' + u + '</option>'; }).join('') + '</select></label>' +
+        '<label class="f">Prix unitaire (€)<input data-wz="l.pu" inputmode="decimal" value="' + esc(w.line.pu) + '"></label></div>' +
+        '<div class="kicker">Total de cette prestation : <b id="wz-lt">' + fmt(num(w.line.qte) * num(w.line.pu)) + '</b></div>' +
+        '<button class="btn soft block" data-act="wz-addline" type="button">' + ic('plus', 18) + ' Ajouter, puis une autre prestation</button>' +
+        '<button class="btn block" data-act="wz-next" type="button">Suivant</button>';
+    } else if (w.step === 3) {
+      h += '<div class="wzq">Les conditions</div>' +
+        '<div class="row2"><label class="f">Remise (%)<input data-wz="remise" inputmode="decimal" value="' + esc(d.remise) + '"></label>' +
+        '<label class="f">Acompte (%)<input data-wz="acompte" inputmode="decimal" value="' + esc(d.acompte) + '"></label></div>' +
+        '<label class="f">Délai d\'exécution<input data-wz="delai" value="' + esc(d.delai) + '" autocomplete="off" placeholder="Ex. Début sous 3 semaines, 5 jours de travaux"></label>' +
+        '<label class="f">Remarques (facultatif)<textarea class="des" rows="2" data-wz="notes">' + esc(d.notes) + '</textarea></label>' +
+        '<button class="btn block" data-act="wz-next" type="button">Suivant</button>';
+    } else {
+      var t = total(d);
+      h += '<div class="wzq">Récapitulatif</div><div class="hero" style="padding:16px"><div class="kicker">Total du devis</div><div class="big">' + fmt(t.net) + '</div>' + (t.ap ? '<div class="kicker">Acompte ' + t.ap + ' % : ' + fmt(t.acompte) + '</div>' : '') + '</div>' +
+        '<div class="card flat"><div><b>' + esc(d.client.nom || 'Client à choisir') + '</b></div>' + (d.chantier.objet ? '<div class="kicker">' + esc(d.chantier.objet) + '</div>' : '') + '</div>' +
+        '<div class="stack">' + d.lignes.map(function (l) { return '<div class="wzline"><span>' + esc(String(l.des).split('\n')[0]) + '<br><span class="kicker">' + esc(l.qte) + ' ' + esc(l.unite) + ' × ' + fmt(num(l.pu)) + '</span></span><b>' + fmt(lineTotal(l)) + '</b></div>'; }).join('') + '</div>' +
+        '<button class="btn block" data-act="wz-finish" type="button">' + ic('file', 18) + ' Ouvrir le devis pour vérifier</button>' +
+        '<p class="kicker">Tu pourras tout modifier, voir l\'aperçu PDF, puis enregistrer.</p>';
+    }
+    if (w.step > 0) h += '<button class="linkbtn" data-act="wz-back" type="button">← Étape précédente</button>';
+    openSheet('Assistant devis', h);
+    if (focusSel) { var f = document.querySelector('#sheet ' + focusSel); if (f) try { f.focus(); } catch (e) { /* ignoré */ } }
+  }
+
+  /* ---------- Assistant IA (gratuit, via Supabase + Google) ---------- */
+  var ai = null;
+  function aiBlank() { return { objet: '', lignes: [], remise: String(state.profile.defRemise || '0'), acompte: String(state.profile.defAcompte || '0'), delai: '', notes: '' }; }
+  function aiStart() { ai = { stage: 'client', doc: newDoc('devis'), msgs: [], draft: aiBlank(), busy: false, nc: { nom: '', tel: '' } }; aiClientRender(); }
+  function aiClientRender() {
+    var h = '<div class="wzq">Pour quel client ?</div>';
+    if (state.clients.length) {
+      h += '<div class="stack">' + state.clients.slice().sort(function (a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); }).slice(0, 40).map(function (c) {
+        return '<button type="button" class="item" style="box-shadow:none;background:var(--bg)" data-act="ai-client" data-id="' + c.id + '"><span class="ico">' + esc((c.nom || '?').charAt(0).toUpperCase()) + '</span><span class="mid-col"><span class="t">' + esc(c.nom) + '</span><span class="s">' + esc(c.adresse || c.tel || '') + '</span></span></button>';
+      }).join('') + '</div><p class="kicker">Ou un nouveau client :</p>';
+    }
+    h += '<label class="f">Nom du client<input data-ai="cnom" value="' + esc(ai.nc.nom) + '" autocomplete="off" placeholder="Ex. Mme Martin"></label>' +
+      '<label class="f">Téléphone (facultatif)<input data-ai="ctel" type="tel" value="' + esc(ai.nc.tel) + '" autocomplete="off"></label>' +
+      '<button class="btn block" data-act="ai-newclient" type="button">Continuer</button>' +
+      '<button class="linkbtn" data-act="ai-skip-client" type="button">Je choisirai le client plus tard</button>' +
+      '<p class="kicker">Le nom du client n\'est jamais envoyé à l\'assistant.</p>';
+    openSheet('Assistant devis', h);
+  }
+  function aiChatRender() {
+    var h = (ai.doc.client.nom ? '<div class="kicker">Client : ' + esc(ai.doc.client.nom) + '</div>' : '') +
+      '<div id="ai-msgs" class="aimsgs"></div><div id="ai-draft"></div>' +
+      '<label class="f">Ton message<textarea id="ai-in" class="des" rows="2" placeholder="Décris les travaux : surface, prestations, prix… (micro du clavier pour dicter)"></textarea></label>' +
+      '<button class="btn block" id="ai-send" data-act="ai-send" type="button">' + ic('spark', 18) + ' Envoyer</button>' +
+      '<button class="btn soft block" id="ai-open" data-act="ai-finish" type="button" hidden>Ouvrir le devis pour vérifier</button>' +
+      '<p class="kicker">Ne dicte pas le nom, l\'adresse ni le téléphone du client : l\'application les gère. Le texte est traité par l\'IA gratuite de Google.</p>';
+    openSheet('Assistant devis', h); aiPaint();
+  }
+  function aiPaint() {
+    var m = $('ai-msgs'); if (!m) return;
+    var html = '<div class="bub ai">Décris-moi les travaux, comme tu le dirais à un collègue. Je prépare le devis et je te pose les questions qui manquent.</div>';
+    ai.msgs.forEach(function (x) { html += '<div class="bub ' + (x.role === 'user' ? 'me' : 'ai') + '">' + esc(x.shown || x.content) + '</div>'; });
+    if (ai.busy) html += '<div class="bub ai">L\'assistant réfléchit…</div>';
+    m.innerHTML = html; m.scrollTop = m.scrollHeight;
+    var dr = ai.draft, dh = '';
+    if (dr.objet || dr.lignes.length) {
+      var t = total({ lignes: dr.lignes, remise: dr.remise, acompte: dr.acompte });
+      dh = '<div class="card flat"><div class="kicker">Brouillon du devis</div>' + (dr.objet ? '<div><b>' + esc(dr.objet) + '</b></div>' : '') +
+        dr.lignes.map(function (l) { return '<div class="wzline" style="margin-top:6px"><span>' + esc(String(l.des).split('\n')[0]) + '<br><span class="kicker">' + esc(l.qte) + ' ' + esc(l.unite) + ' × ' + (l.pu ? fmt(num(l.pu)) : '<b style="color:var(--bad)">prix ?</b>') + '</span></span><b>' + fmt(lineTotal(l)) + '</b></div>'; }).join('') +
+        '<div style="margin-top:8px;text-align:right">Total : <b>' + fmt(t.net) + '</b></div></div>';
+    }
+    $('ai-draft').innerHTML = dh;
+    var send = $('ai-send'); if (send) { send.disabled = ai.busy; }
+    var op = $('ai-open'); if (op) op.hidden = !ai.draft.lignes.length;
+  }
+  function aiRedact(t) {
+    var out = String(t);
+    state.clients.forEach(function (c) { var n = String(c.nom || '').trim(); if (n.length >= 3) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client'); });
+    var cn = String(ai.doc.client.nom || '').trim(); if (cn.length >= 3) out = out.replace(new RegExp(cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client');
+    return out.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '').replace(/(?:\+33|0033|0)[\s.]?[1-9](?:[\s.]?\d{2}){4}/g, '');
+  }
+  async function aiErr(e) {
+    try { if (e && e.context && e.context.json) { var j = await e.context.json(); if (j && j.error) return j.error; } } catch (x) { /* ignoré */ }
+    if (e && e.message && !/non-2xx|Failed to send/i.test(e.message)) return e.message;
+    return 'Impossible de joindre l\'assistant. Vérifie ta connexion, ou utilise le devis pas à pas.';
+  }
+  async function aiSend() {
+    if (!ai || ai.busy || !sb) return;
+    var inp = $('ai-in'), txt = (inp.value || '').trim(); if (!txt) return;
+    ai.msgs.push({ role: 'user', content: aiRedact(txt), shown: txt }); inp.value = ''; inp.style.height = ''; ai.busy = true; aiPaint();
+    var body = { messages: ai.msgs.map(function (m) { return { role: m.role, content: m.content }; }), draft: ai.draft,
+      context: { catalogue: (state.profile.catalogue || []).filter(function (c) { return c.des; }).slice(0, 60).map(function (c) { return { des: c.des, unite: c.unite, pu: c.pu }; }),
+        defaults: { remise: state.profile.defRemise || '0', acompte: state.profile.defAcompte || '0' } } };
+    try {
+      var r = await sb.functions.invoke('assistant-devis', { body: body });
+      if (r.error) throw r.error;
+      var d = r.data; if (!d || d.error) throw new Error((d && d.error) || 'vide');
+      if (!ai) return;
+      ai.draft = d.draft; ai.msgs.push({ role: 'assistant', content: d.reply || 'Brouillon mis à jour.' });
+    } catch (e) {
+      if (!ai) return;
+      var m = await aiErr(e); ai.msgs.pop(); inp = $('ai-in'); if (inp) inp.value = txt; toast(m);
+    }
+    ai.busy = false; aiPaint();
+  }
+  function aiFinish() {
+    if (!ai) return;
+    var d = ai.doc, dr = ai.draft;
+    d.chantier.objet = dr.objet || '';
+    d.lignes = dr.lignes.map(function (l) { return { id: rid(), des: l.des, qte: l.qte || '1', unite: UNITES.indexOf(l.unite) >= 0 ? l.unite : 'u', pu: l.pu || '' }; });
+    d.remise = dr.remise || '0'; d.acompte = dr.acompte || '0'; d.delai = dr.delai || ''; d.notes = dr.notes || '';
+    ai = null; closeSheet(); openEditor(d, true);
+  }
+
   /* ---------- Actions ---------- */
   function docById(id) { return state.docs.filter(function (x) { return x.id === id; })[0]; }
   function newClientFlow(thenSelect) { openClientSheet('', thenSelect); }
@@ -1212,9 +1380,36 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     switch (act) {
       case 'sheet-close': closeSheet(); break;
       case 'menu-new':
-        openSheet('Créer', '<button class="btn block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis</button>' +
+        openSheet('Créer', '<button class="btn block" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 18) + ' Devis avec l\'assistant</button>' + (state.mode === 'db' ? '<button class="btn soft block" data-act="wz-start" type="button">Devis pas à pas</button>' : '') +
+          '<button class="btn soft block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis (libre)</button>' +
           '<button class="btn soft block" data-act="new-facture" type="button">' + ic('receipt', 18) + ' Nouvelle facture</button>' +
           '<button class="btn outline block" data-act="new-client" type="button">' + ic('users', 18) + ' Nouveau client</button>'); break;
+      case 'ai-start': aiStart(); break;
+      case 'ai-client': { var ac = state.clients.filter(function (c) { return c.id === id; })[0]; if (ac && ai) { ai.doc.client = { id: ac.id, nom: ac.nom, adresse: ac.adresse || '', tel: ac.tel || '', email: ac.email || '' }; ai.doc.chantier.adresse = ac.adresse || ''; aiChatRender(); } break; }
+      case 'ai-newclient': {
+        if (!ai) break;
+        var an = (ai.nc.nom || '').trim(); if (!an) { toast('Écris le nom du client.'); return; }
+        var ncl2 = { id: rid(), nom: an, tel: (ai.nc.tel || '').trim(), email: '', adresse: '' };
+        if (await guard(function () { return repo.put('clients', ncl2); })) { ai.doc.client = { id: ncl2.id, nom: ncl2.nom, adresse: '', tel: ncl2.tel, email: '' }; aiChatRender(); }
+        break; }
+      case 'ai-skip-client': if (ai) aiChatRender(); break;
+      case 'ai-send': aiSend(); break;
+      case 'ai-finish': aiFinish(); break;
+      case 'wz-start': wzStart(); break;
+      case 'wz-client': { var wc = state.clients.filter(function (c) { return c.id === id; })[0]; if (wc && wz) { wz.doc.client = { id: wc.id, nom: wc.nom, adresse: wc.adresse || '', tel: wc.tel || '', email: wc.email || '' }; if (!wz.doc.chantier.adresse) wz.doc.chantier.adresse = wc.adresse || ''; wz.step = 1; wzRender(); } break; }
+      case 'wz-newclient': {
+        if (!wz) break;
+        var nn = (wz.nc.nom || '').trim(); if (!nn) { toast('Écris le nom du client.'); return; }
+        var ncl = { id: rid(), nom: nn, tel: (wz.nc.tel || '').trim(), email: '', adresse: '' };
+        if (await guard(function () { return repo.put('clients', ncl); })) { wz.doc.client = { id: ncl.id, nom: ncl.nom, adresse: '', tel: ncl.tel, email: '' }; wz.step = 1; wzRender(); }
+        break; }
+      case 'wz-skip-client': if (wz) { wz.step = 1; wzRender(); } break;
+      case 'wz-cat': { var ct = (state.profile.catalogue || []).filter(function (c) { return c.id === b.getAttribute('data-cid'); })[0]; if (ct && wz) { wz.line.des = ct.des; wz.line.unite = ct.unite || wz.line.unite; if (ct.pu) wz.line.pu = ct.pu; wzRender(); } break; }
+      case 'wz-addline': if (wz) { if (!wzCommit()) { toast('Décris d\'abord la prestation.'); return; } wzRender(); } break;
+      case 'wz-del-line': if (wz) { wz.doc.lignes.splice(parseInt(b.getAttribute('data-i'), 10), 1); wzRender(); } break;
+      case 'wz-next': if (wz) { if (wz.step === 2) { wzCommit(); if (!wz.doc.lignes.length) { toast('Ajoute au moins une prestation.'); return; } } wz.step++; wzRender(); } break;
+      case 'wz-back': if (wz && wz.step > 0) { wz.step--; wzRender(); } break;
+      case 'wz-finish': if (wz) { var wd = wz.doc; wz = null; closeSheet(); openEditor(wd, true); } break;
       case 'new-devis': startDoc('devis'); break;
       case 'new-facture': startDoc('facture'); break;
       case 'new-client': closeSheet(); newClientFlow(false); break;
@@ -1315,6 +1510,10 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     if (t.id === 'q') { state.q = t.value; renderDocList(); return; }
     if (t.id === 'cq') { state.cq = t.value; renderClientList(); return; }
     if (t.id === 'cp-q') { cpList(t.value); return; }
+    var aif = t.getAttribute && t.getAttribute('data-ai');
+    if (aif && ai) { if (aif === 'cnom') ai.nc.nom = t.value; else if (aif === 'ctel') ai.nc.tel = t.value; return; }
+    var wzf = t.getAttribute && t.getAttribute('data-wz');
+    if (wzf && wz) { wzSet(wzf, t.value); return; }
     var pp = t.getAttribute && t.getAttribute('data-p');
     if (pp) { state.profile[pp] = t.value; saveProfileSoon(); refreshPreviews(); return; }
     var cf = t.getAttribute && t.getAttribute('data-cat');
