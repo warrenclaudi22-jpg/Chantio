@@ -159,6 +159,10 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .lines-mini div { display: flex; justify-content: space-between; gap: 10px; }
 .lines-mini span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .lines-mini span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.phgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
+.phgrid .ph { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--sky); }
+.phgrid .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.phgrid .ph button { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(16,40,59,.75); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
 .bar { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 .bar.hot i { background: var(--bad); }
@@ -559,6 +563,51 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     h += '<div class="stack"><h2 class="h2">Activité récente</h2>' + (recent.length ? recent.map(docItem).join('') : '<div class="card flat empty">Rien pour l\'instant. Tes devis et factures apparaîtront ici.</div>') + '</div></div>';
     $('main').innerHTML = h;
   }
+  /* ---------- Photos de chantier ---------- */
+  var PHOTO_MAX = 6;
+  function edPhotos() {
+    var el = $('ed-photos'); if (!el || !ed) return;
+    var L = ed.doc.photos || [];
+    el.innerHTML = L.length ? '<div class="phgrid">' + L.map(function (ph, i) { return '<div class="ph"><img src="' + ph.data + '" alt="Photo ' + (i + 1) + '"><button type="button" data-act="ph-del" data-i="' + i + '" aria-label="Retirer la photo">×</button></div>'; }).join('') + '</div>' : '';
+    var add = $('ed-photo-add'); if (add) add.hidden = L.length >= PHOTO_MAX;
+  }
+  function photoShrink(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file), im = new Image();
+      im.onload = function () {
+        try {
+          var k = Math.min(1, 1100 / Math.max(im.width, im.height)), w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+          var c = document.createElement('canvas'); c.width = w; c.height = h;
+          var cx = c.getContext('2d'); cx.fillStyle = '#ffffff'; cx.fillRect(0, 0, w, h); cx.drawImage(im, 0, 0, w, h);
+          resolve({ data: c.toDataURL('image/jpeg', 0.72), w: w, h: h });
+        } catch (e) { resolve(null); }
+        URL.revokeObjectURL(url);
+      };
+      im.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      im.src = url;
+    });
+  }
+  async function addPhotos(files) {
+    if (!ed) return;
+    ed.doc.photos = ed.doc.photos || [];
+    var list = Array.prototype.slice.call(files || []), skipped = false;
+    for (var i = 0; i < list.length; i++) {
+      if (ed.doc.photos.length >= PHOTO_MAX) { skipped = true; break; }
+      var r = await photoShrink(list[i]);
+      if (r) ed.doc.photos.push(r); else skipped = true;
+    }
+    edPhotos();
+    toast(skipped ? 'Certaines photos n\'ont pas pu être ajoutées (6 maximum).' : 'Photo' + (list.length > 1 ? 's ajoutées' : ' ajoutée') + '.');
+  }
+  var photoCache = {};
+  function photoImg(ph) {
+    var c = photoCache[ph.data];
+    if (!c) {
+      var im = new Image(); c = photoCache[ph.data] = { el: im, data: ph.data, fmt: 'JPEG', w: ph.w || 1, h: ph.h || 1 };
+      im.onload = function () { refreshPreviews(); }; im.src = ph.data;
+    }
+    return c;
+  }
   /* ---------- Plafond, relances, sauvegarde ---------- */
   var RELANCE_JOURS = 7;
   function plafondHtml(payees) {
@@ -783,6 +832,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       '<label class="f" id="ed-acompte">Acompte (%)<input data-b="acompte" inputmode="decimal"></label></div>' +
       '<label class="f" id="ed-delai">Délai d\'exécution<input data-b="delai" placeholder="Ex. Début sous 3 semaines, 5 jours de travaux" autocomplete="off"></label>' +
       '<label class="f">Remarques<textarea data-b="notes"></textarea></label></div>' +
+      '<div class="card"><h2 class="h2">Photos du chantier</h2><p class="kicker" style="margin:0">Facultatif. Elles s\'ajoutent sur une page du PDF (6 maximum).</p><div id="ed-photos"></div>' +
+      '<label class="btn soft block" id="ed-photo-add">' + ic('plus', 18) + ' Ajouter des photos<input type="file" accept="image/*" multiple hidden data-photo></label></div>' +
       '<p class="kicker" style="text-align:center">' + esc(state.profile.mentionTva) + '</p></div></div>' +
       '<div class="ed-bar"><div class="in"><div><div class="kicker">Total à payer</div><div class="mid" id="ed-total"></div></div><div style="display:flex;gap:8px"><button class="btn soft" data-act="ed-preview" type="button">Aperçu</button><button class="btn" data-act="ed-save" type="button">Enregistrer</button></div></div></div>';
     $('editor').innerHTML = h; $('editor').hidden = false; lockBody();
@@ -797,7 +848,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var ex = $('ed-extra');
     ex.innerHTML = (fac ? 'Échéance' : 'Validité (jours)') + '<input ' + (fac ? 'type="date" data-b="echeance"' : 'data-b="validite" inputmode="numeric"') + ' value="' + esc(fac ? d.echeance : d.validite) + '">';
     $('ed-acompte').hidden = fac; $('ed-delai').hidden = fac;
-    edClient(); edLines(); edTotal();
+    edClient(); edLines(); edTotal(); edPhotos();
   }
   function getPath(o, p) { return p.split('.').reduce(function (a, k) { return a == null ? '' : a[k]; }, o); }
   function setPath(o, p, v) { var ks = p.split('.'), last = ks.pop(); ks.reduce(function (a, k) { return a[k]; }, o)[last] = v; }
@@ -1135,6 +1186,21 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     }
     var ym = y + (fac ? 16 : (showSign ? 32 : 0)) + 8;
     if (p.merci && p.merci.trim()) { wrapT(b, p.merci, PCW, 10.5, true).forEach(function (s) { if (ym + lh(10.5) < limit + 4) T(s, PW / 2, ym, 10.5, { bold: true, color: accDark, align: 'center' }); ym += lh(10.5); }); }
+
+    /* --- photos du chantier --- */
+    var phs = (d.photos || []).slice(0, 6);
+    if (phs.length) {
+      b.newPage(); var py = 16;
+      T('PHOTOS DU CHANTIER', PM, py + 4, 13, { bold: true, color: accDark });
+      py += 12;
+      var gw = (PCW - 6) / 2, gh = (limit - py - 8) / 3;
+      phs.forEach(function (ph, i) {
+        var col = i % 2, row = Math.floor(i / 2), bx = PM + col * (gw + 6), by = py + row * (gh + 4);
+        var sc = Math.min(gw / ph.w, (gh - 2) / ph.h), iw = ph.w * sc, ih = ph.h * sc;
+        b.rect(bx, by, gw, gh - 2, { stroke: LINE, lw: 0.3, r: 1.5 });
+        b.image(photoImg(ph), bx + (gw - iw) / 2, by + (gh - 2 - ih) / 2, iw, ih, 1);
+      });
+    }
 
     /* --- pieds de page, filigrane --- */
     var n = b.count(), fx = PM, flw = 0;
@@ -1548,6 +1614,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
           '<button class="btn soft block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis (libre)</button>' +
           '<button class="btn soft block" data-act="new-facture" type="button">' + ic('receipt', 18) + ' Nouvelle facture</button>' +
           '<button class="btn outline block" data-act="new-client" type="button">' + ic('users', 18) + ' Nouveau client</button>'); break;
+      case 'ph-del': if (ed && ed.doc.photos) { ed.doc.photos.splice(Number(b.getAttribute('data-i')), 1); edPhotos(); } break;
       case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
       case 'set-backup': backupNow(); break;
       case 'doc-send': { var dsd = docById(id); if (dsd) openSend(dsd); break; }
@@ -1702,6 +1769,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   document.addEventListener('change', async function (e) {
     var t = e.target;
     if (t.id === 'logo-file' && t.files && t.files[0]) { handleLogo(t.files[0]); t.value = ''; return; }
+    if (t.hasAttribute && t.hasAttribute('data-photo')) { var pf = t.files; await addPhotos(pf); t.value = ''; return; }
     if (ed && t.getAttribute('data-l') === 'unite') { var row = t.closest('.line'); var l = ed.doc.lignes.filter(function (x) { return x.id === row.getAttribute('data-lid'); })[0]; if (l) l.unite = t.value; }
     if (t.getAttribute('data-act-change') === 'doc-status') {
       var d = docById(t.getAttribute('data-id')); if (!d) return; d.statut = t.value;
