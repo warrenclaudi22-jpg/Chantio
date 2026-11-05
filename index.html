@@ -237,6 +237,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.9.2 5 2.4 5 5.8"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    send: '<path d="M21 3L10 14"/><path d="M21 3l-7 18-4-8-8-4z"/>',
     spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
     star: '<path d="M12 4l2.5 5.2 5.7.8-4.1 4 1 5.7L12 17l-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/>',
@@ -650,6 +651,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       h += '<div class="card"><h2 class="h2">Mes prestations</h2><p class="lead" style="margin:0">Elles apparaissent quand tu ajoutes une prestation à un devis, avec le prix déjà rempli.</p>' +
         '<div class="stack" id="cat-list">' + catalogueHtml() + '</div>' +
         '<button class="btn soft block" data-act="cat-add" type="button">' + ic('plus', 18) + ' Ajouter une prestation</button></div>';
+      h += '<div class="card"><h2 class="h2">Consignes pour l\'assistant</h2><p class="lead" style="margin:0">L\'assistant apprend déjà de tes anciens devis (prix, formulations, acompte, délai). Ajoute ici tes règles à lui rappeler.</p>' +
+        '<label class="f">Mes habitudes<textarea class="des" rows="4" data-p="aiNotes" placeholder="Ex. Je compte toujours 35 € de déplacement. Échafaudage au-delà de 4 m. Acompte de 30 % pour les travaux de plus de 1 000 €."></textarea></label></div>';
     } else {
       h += '<div class="card"><h2 class="h2">Thème de l\'application</h2>' + segHtml('theme', [['auto', 'Automatique'], ['clair', 'Clair'], ['sombre', 'Sombre']], p.theme || 'auto') + '</div>' +
         '<div class="card flat"><h2 class="h2">Mon compte</h2><p class="lead" style="margin:0">' +
@@ -779,6 +782,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><div class="kicker">' + esc(d.numero) + ' · ' + esc(frDate(d.date)) + '</div><div style="font-weight:700;font-size:18px">' + esc(nom(d)) + '</div></div>' + pill(st) + '</div>';
     h += '<div class="hero" style="padding:16px"><div class="kicker">' + (fac ? 'Net à payer' : 'Total du devis') + '</div><div class="big">' + fmt(t.net) + '</div>' +
       (fac ? '<div class="kicker">Échéance : ' + esc(frDate(d.echeance)) + (d.devisRef ? ' · Devis ' + esc(d.devisRef) : '') + '</div>' : (t.ap ? '<div class="kicker">Acompte ' + t.ap + ' % : ' + fmt(t.acompte) + '</div>' : '')) + '</div>';
+    h += '<button class="btn block" data-act="doc-send" data-id="' + d.id + '" type="button">' + ic('send', 18) + ' Envoyer au client</button>' + (d.envoye ? '<div class="kicker">Envoyé le ' + esc(new Date(d.envoye.at).toLocaleDateString('fr-FR')) + ' à ' + esc(d.envoye.to) + '</div>' : '');
     h += '<div class="row2"><button class="btn soft" data-act="viewer-open" data-id="' + d.id + '" type="button">' + ic('file', 18) + ' Aperçu</button><button class="btn" data-act="doc-dl" data-id="' + d.id + '" type="button">' + ic('download', 18) + ' Télécharger</button></div>';
     h += '<button type="button" class="pvthumb" data-act="viewer-open" data-id="' + d.id + '" aria-label="Voir le PDF en grand"><span id="pv-doc"></span><span class="pvhint">Toucher pour voir en grand</span></button>';
     if (!fac) {
@@ -852,7 +856,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   }
 
   function pdfBackend(JsPDF) {
-    var doc = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'p' });
+    var doc = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'p', compress: true });
     var setF = function (h) { var c = hexRgb(h); doc.setFillColor(c[0], c[1], c[2]); };
     var setD = function (h) { var c = hexRgb(h); doc.setDrawColor(c[0], c[1], c[2]); };
     return {
@@ -1210,6 +1214,67 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   }
 
 
+  /* ---------- Envoyer au client ---------- */
+  var snd = null;
+  function sndMessage(d) {
+    var p = state.profile, t = total(d), fac = d.type === 'facture', who = (d.client && d.client.nom) ? d.client.nom : '';
+    var L = ['Bonjour' + (who ? ' ' + who : '') + ',', ''];
+    L.push(fac
+      ? 'Veuillez trouver ci-joint la facture n° ' + d.numero + (d.chantier.objet ? ' relative à : ' + d.chantier.objet : '') + ', d\'un montant de ' + fmt(t.net) + '.'
+      : 'Suite à notre échange, veuillez trouver ci-joint notre devis n° ' + d.numero + (d.chantier.objet ? ' pour : ' + d.chantier.objet : '') + ', d\'un montant de ' + fmt(t.net) + '.');
+    if (!fac && t.ap) L.push('Un acompte de ' + t.ap + ' % (' + fmt(t.acompte) + ') est demandé à la commande.');
+    L.push(fac ? 'Le règlement est attendu avant le ' + frDate(d.echeance) + '.' : 'Ce devis est valable ' + (d.validite || '30') + ' jours.');
+    L.push('', fac ? 'Je reste à votre disposition pour toute question.' : 'Pour l\'accepter, merci de me le retourner signé avec la mention « Bon pour accord ». Je reste à votre disposition pour toute question.', '', 'Cordialement,', p.nom || '');
+    if (p.tel) L.push(p.tel);
+    return L.join('\n');
+  }
+  function openSend(d) {
+    snd = { id: d.id, to: (d.client && d.client.email) || '', subject: (d.type === 'facture' ? 'Facture ' : 'Devis ') + d.numero + ' – ' + (state.profile.nom || 'Mon entreprise'), message: sndMessage(d), busy: false, direct: typeof repo.sendMail === 'function' };
+    var h = (d.envoye ? '<div class="notice">Déjà envoyé le ' + esc(new Date(d.envoye.at).toLocaleDateString('fr-FR')) + ' à ' + esc(d.envoye.to) + '. Tu peux le renvoyer si besoin.</div>' : '') +
+      '<label class="f">E-mail du client<input data-snd="to" type="email" inputmode="email" autocapitalize="none" autocomplete="off" value="' + esc(snd.to) + '" placeholder="client@exemple.fr"></label>' +
+      '<label class="f">Objet<input data-snd="subject" value="' + esc(snd.subject) + '" autocomplete="off"></label>' +
+      '<label class="f">Message<textarea class="des" rows="6" data-snd="message">' + esc(snd.message) + '</textarea></label>' +
+      '<div class="kicker">Le PDF ' + esc(d.numero) + '.pdf est joint automatiquement.</div>' +
+      (snd.direct ? '<button class="btn block" id="snd-go" data-act="snd-go" type="button">' + ic('send', 18) + ' ' + (d.envoye ? 'Renvoyer maintenant' : 'Envoyer maintenant') + '</button>' : '') +
+      '<button class="btn ' + (snd.direct ? 'soft ' : '') + 'block" data-act="snd-share" type="button">' + (snd.direct ? 'Envoyer avec une autre application' : ic('send', 18) + ' Envoyer le PDF') + '</button>';
+    openSheet(d.type === 'facture' ? 'Envoyer la facture' : 'Envoyer le devis', h);
+  }
+  async function sndGo() {
+    var d = snd && docById(snd.id); if (!d || snd.busy) return;
+    var to = (snd.to || '').trim();
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(to)) { toast('Saisis une adresse e-mail valide.'); return; }
+    var doc = null; try { doc = buildPdf(d); } catch (e) { doc = null; }
+    if (!doc) { toast('La création du PDF n\'est pas disponible pour le moment.'); return; }
+    snd.busy = true; var btn = $('snd-go'); if (btn) { btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+    var b64 = String(doc.output('datauristring')).split('base64,')[1] || '';
+    var r = await repo.sendMail({ to: to, subject: snd.subject, message: snd.message, filename: d.numero + '.pdf', pdf: b64, replyTo: state.profile.email || '' });
+    snd.busy = false;
+    if (r && r.ok) {
+      d.envoye = { at: Date.now(), to: to };
+      if (d.client && !d.client.email) d.client.email = to;
+      if (d.type === 'devis' && d.statut === 'Brouillon') d.statut = 'Envoyé';
+      await guard(function () { return repo.put('docs', d); });
+      toast((d.type === 'facture' ? 'Facture envoyée à ' : 'Devis envoyé à ') + to + '.'); openDoc(d.id);
+    } else {
+      if (btn) { btn.disabled = false; btn.innerHTML = ic('send', 18) + ' Réessayer l\'envoi'; }
+      if (r && r.code === 'not_enabled') { if (btn) btn.hidden = true; toast('L\'envoi automatique n\'est pas disponible sur ce compte. Utilise l\'autre bouton.'); }
+      else toast((r && r.error) || 'L\'envoi a échoué.');
+    }
+  }
+  async function sndShare() {
+    var d = snd && docById(snd.id); if (!d) return;
+    var to = (snd.to || '').trim();
+    var doc = null; try { doc = buildPdf(d); } catch (e) { doc = null; }
+    if (!doc) { toast('La création du PDF n\'est pas disponible pour le moment.'); return; }
+    if (to) { try { navigator.clipboard.writeText(to).catch(function () { /* ignoré */ }); } catch (e) { /* ignoré */ } }
+    var name = d.numero + '.pdf', data = doc.output('arraybuffer');
+    try {
+      var file = new File([data], name, { type: 'application/pdf' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: snd.subject, text: snd.message }); if (to) toast('E-mail du client copié : colle-le dans « À ».'); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    await saveFile(name, data);
+  }
+
   /* ---------- Assistant de devis (guidé) ---------- */
   var wz = null;
   var WZ_N = 5;
@@ -1333,6 +1398,25 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var cn = String(ai.doc.client.nom || '').trim(); if (cn.length >= 3) out = out.replace(new RegExp(cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client');
     return out.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '').replace(/(?:\+33|0033|0)[\s.]?[1-9](?:[\s.]?\d{2}){4}/g, '');
   }
+
+  function aiNorm(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[0-9]+/g, '').replace(/[^a-z ]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60); }
+  function aiHabits() {
+    var map = {};
+    state.docs.slice().sort(function (a, b) { return (a.createdAt || 0) - (b.createdAt || 0); }).slice(-80).forEach(function (d) {
+      (d.lignes || []).forEach(function (l) {
+        var k = aiNorm(l.des); if (!k || !num(l.pu)) return;
+        var e = map[k] || (map[k] = { n: 0 }); e.n++; e.des = String(l.des).split('\n')[0].slice(0, 160); e.unite = l.unite; e.pu = l.pu; e.last = d.createdAt || 0;
+      });
+    });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return (b.n - a.n) || (b.last - a.last); }).slice(0, 30)
+      .map(function (e) { return { des: aiRedact(e.des), unite: e.unite, pu: e.pu, n: e.n }; });
+  }
+  function aiMode(arr) { var c = {}, best = '', bn = 0; arr.forEach(function (v) { v = String(v || '').trim(); if (!v) return; c[v] = (c[v] || 0) + 1; if (c[v] > bn) { bn = c[v]; best = v; } }); return best; }
+  function aiHabitsDoc() {
+    var ds = state.docs.filter(function (d) { return d.type === 'devis'; }).slice(-30);
+    return { acompte: aiMode(ds.map(function (d) { return d.acompte; }).filter(function (v) { return num(v) > 0; })), delai: aiRedact(aiMode(ds.map(function (d) { return d.delai; }))), notes: aiRedact(aiMode(ds.map(function (d) { return d.notes; }))) };
+  }
+
   async function aiErr(e) {
     try { if (e && e.context && e.context.json) { var j = await e.context.json(); if (j && j.error) return j.error; } } catch (x) { /* ignoré */ }
     if (e && e.message && !/non-2xx|Failed to send/i.test(e.message)) return e.message;
@@ -1343,12 +1427,13 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var inp = $('ai-in'), txt = (inp.value || '').trim(); if (!txt) return;
     ai.msgs.push({ role: 'user', content: aiRedact(txt), shown: txt }); inp.value = ''; inp.style.height = ''; ai.busy = true; aiPaint();
     var body = { messages: ai.msgs.map(function (m) { return { role: m.role, content: m.content }; }), draft: ai.draft,
-      context: { catalogue: (state.profile.catalogue || []).filter(function (c) { return c.des; }).slice(0, 60).map(function (c) { return { des: c.des, unite: c.unite, pu: c.pu }; }),
-        defaults: { remise: state.profile.defRemise || '0', acompte: state.profile.defAcompte || '0' } } };
+      context: { catalogue: (state.profile.catalogue || []).filter(function (c) { return c.des; }).slice(0, 60).map(function (c) { return { des: aiRedact(c.des), unite: c.unite, pu: c.pu }; }),
+        defaults: { remise: state.profile.defRemise || '0', acompte: state.profile.defAcompte || '0' },
+        habitudes: aiHabits(), habitudes_doc: aiHabitsDoc(), consignes: aiRedact(state.profile.aiNotes || '') } };
     try {
       var r = await sb.functions.invoke('assistant-devis', { body: body });
       if (r.error) throw r.error;
-      var d = r.data; if (!d || d.error) throw new Error((d && d.error) || 'vide');
+      var d = r.data; if (!d || d.error || !d.draft || !Array.isArray(d.draft.lignes)) throw new Error((d && d.error) || 'Réponse inattendue de l\'assistant.');
       if (!ai) return;
       ai.draft = d.draft; ai.msgs.push({ role: 'assistant', content: d.reply || 'Brouillon mis à jour.' });
     } catch (e) {
@@ -1365,6 +1450,15 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     d.remise = dr.remise || '0'; d.acompte = dr.acompte || '0'; d.delai = dr.delai || ''; d.notes = dr.notes || '';
     ai = null; closeSheet(); openEditor(d, true);
   }
+
+  repo.sendMail = async function (p) {
+    if (!sb) return { error: 'Non connecté.' };
+    try {
+      var r = await sb.functions.invoke('envoyer-devis', { body: p });
+      if (r.error) { var j = null; try { j = await r.error.context.json(); } catch (x) { /* ignoré */ } return { error: (j && j.error) || 'L\'envoi a échoué.', code: j && j.code }; }
+      return r.data && r.data.ok ? { ok: true } : { error: (r.data && r.data.error) || 'L\'envoi a échoué.' };
+    } catch (e) { return { error: 'Impossible de joindre le service d\'envoi.' }; }
+  };
 
   /* ---------- Actions ---------- */
   function docById(id) { return state.docs.filter(function (x) { return x.id === id; })[0]; }
@@ -1384,6 +1478,9 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
           '<button class="btn soft block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis (libre)</button>' +
           '<button class="btn soft block" data-act="new-facture" type="button">' + ic('receipt', 18) + ' Nouvelle facture</button>' +
           '<button class="btn outline block" data-act="new-client" type="button">' + ic('users', 18) + ' Nouveau client</button>'); break;
+      case 'doc-send': { var dsd = docById(id); if (dsd) openSend(dsd); break; }
+      case 'snd-go': sndGo(); break;
+      case 'snd-share': sndShare(); break;
       case 'ai-start': aiStart(); break;
       case 'ai-client': { var ac = state.clients.filter(function (c) { return c.id === id; })[0]; if (ac && ai) { ai.doc.client = { id: ac.id, nom: ac.nom, adresse: ac.adresse || '', tel: ac.tel || '', email: ac.email || '' }; ai.doc.chantier.adresse = ac.adresse || ''; aiChatRender(); } break; }
       case 'ai-newclient': {
@@ -1510,6 +1607,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     if (t.id === 'q') { state.q = t.value; renderDocList(); return; }
     if (t.id === 'cq') { state.cq = t.value; renderClientList(); return; }
     if (t.id === 'cp-q') { cpList(t.value); return; }
+    var sndf = t.getAttribute && t.getAttribute('data-snd');
+    if (sndf && snd) { snd[sndf] = t.value; return; }
     var aif = t.getAttribute && t.getAttribute('data-ai');
     if (aif && ai) { if (aif === 'cnom') ai.nc.nom = t.value; else if (aif === 'ctel') ai.nc.tel = t.value; return; }
     var wzf = t.getAttribute && t.getAttribute('data-wz');
