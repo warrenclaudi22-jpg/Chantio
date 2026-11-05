@@ -159,6 +159,13 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .lines-mini div { display: flex; justify-content: space-between; gap: 10px; }
 .lines-mini span:first-child { min-width: 0; overflow-wrap: anywhere; }
 .lines-mini span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.bar.hot i { background: var(--bad); }
+.rlist { display: grid; gap: 8px; margin-top: 8px; }
+.rrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rrow .tx { min-width: 0; font-size: 14px; }
+.rrow .tx b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notice { background: var(--accent-soft); color: var(--accent-text); border-radius: 14px; padding: 10px 14px; font-size: 14px; }
 .gate { min-height: 70vh; display: flex; align-items: center; justify-content: center; }
 .gate .card { max-width: 440px; text-align: center; align-items: center; padding: 28px 22px; }
@@ -541,6 +548,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       '<button class="btn" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 20) + ' Créer un devis</button></div>';
     h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(payees)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + '</div></div>' +
       '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + fmt(sumFac(attente)) + '</div><div class="sub">' + attente.length + ' devis envoyé' + (attente.length > 1 ? 's' : '') + '</div></div></div>';
+    h += plafondHtml(payees) + relanceHtml() + backupHtml();
     if (!docs.length || !state.clients.length || !p.siret) {
       var s1 = !!(p.nom && p.siret), s2 = state.clients.length > 0, s3 = docs.length > 0;
       h += '<div class="card"><h2 class="h2">Pour bien démarrer</h2><div class="steps">' +
@@ -550,6 +558,64 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     }
     h += '<div class="stack"><h2 class="h2">Activité récente</h2>' + (recent.length ? recent.map(docItem).join('') : '<div class="card flat empty">Rien pour l\'instant. Tes devis et factures apparaîtront ici.</div>') + '</div></div>';
     $('main').innerHTML = h;
+  }
+  /* ---------- Plafond, relances, sauvegarde ---------- */
+  var RELANCE_JOURS = 7;
+  function plafondHtml(payees) {
+    var cap = num(state.profile.plafondCA) || 83600, ca = sumFac(payees), pct = Math.min(100, Math.round(ca / cap * 100));
+    var hot = ca >= cap * 0.8;
+    return '<div class="stat"><div class="kicker">Plafond auto-entrepreneur</div><div class="mid">' + fmt(ca) + ' <span class="sub">sur ' + fmt(cap) + '</span></div>' +
+      '<div class="bar' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="sub">' + (hot ? 'Attention : tu approches du plafond (' + pct + ' %).' : pct + ' % utilisé, encaissements de l\'année.') + '</div></div>';
+  }
+  function relanceList() {
+    var now = Date.now(), out = [];
+    state.docs.forEach(function (d) {
+      var since = d.envoye ? d.envoye.at : (d.createdAt || 0);
+      if (d.type === 'devis' && d.statut === 'Envoyé' && since && now - since >= RELANCE_JOURS * 86400000) out.push({ d: d, jours: Math.floor((now - since) / 86400000), kind: 'devis' });
+      else if (d.type === 'facture' && docStatus(d) === 'En retard') out.push({ d: d, jours: Math.floor((now - new Date(d.echeance + 'T12:00:00').getTime()) / 86400000), kind: 'facture' });
+    });
+    return out.sort(function (a, b) { return b.jours - a.jours; });
+  }
+  function relanceHtml() {
+    var L = relanceList(); if (!L.length) return '';
+    return '<div class="card"><h2 class="h2">À relancer (' + L.length + ')</h2><div class="rlist">' + L.slice(0, 5).map(function (r) {
+      var d = r.d;
+      return '<div class="rrow"><div class="tx"><b>' + esc(nom(d)) + '</b><span class="kicker">' + (r.kind === 'devis' ? 'Devis ' + esc(d.numero) + ' sans réponse depuis ' + r.jours + ' j' : 'Facture ' + esc(d.numero) + ' en retard de ' + r.jours + ' j') + ' · ' + fmt(total(d).net) + '</span></div>' +
+        '<button class="btn soft small" data-act="doc-relance" data-id="' + d.id + '" type="button">Relancer</button></div>';
+    }).join('') + '</div></div>';
+  }
+  function sndRelance(d) {
+    var p = state.profile, t = total(d), who = (d.client && d.client.nom) ? d.client.nom : '', fac = d.type === 'facture';
+    var L = ['Bonjour' + (who ? ' ' + who : '') + ',', ''];
+    if (fac) {
+      L.push('Sauf erreur de ma part, la facture n° ' + d.numero + ' d\'un montant de ' + fmt(t.net) + ', arrivée à échéance le ' + frDate(d.echeance) + ', n\'a pas encore été réglée.');
+      L.push('Je vous la joins de nouveau. Si le paiement a déjà été effectué, merci de ne pas tenir compte de ce message.');
+    } else {
+      L.push('Je me permets de revenir vers vous au sujet de notre devis n° ' + d.numero + ' d\'un montant de ' + fmt(t.net) + (d.envoye ? ', envoyé le ' + new Date(d.envoye.at).toLocaleDateString('fr-FR') : '') + '.');
+      L.push('Avez-vous eu le temps de l\'étudier ? Je reste disponible pour répondre à vos questions ou ajuster la proposition.');
+    }
+    L.push('', 'Cordialement,', p.nom || ''); if (p.tel) L.push(p.tel);
+    return L.join('\n');
+  }
+  function lastBackup() { try { return Number(localStorage.getItem('chantio_backup') || 0); } catch (e) { return 0; } }
+  function markBackup() { try { localStorage.setItem('chantio_backup', String(Date.now())); } catch (e) { /* ignoré */ } }
+  function backupHtml() {
+    if (!state.docs.length) return '';
+    var last = lastBackup(); if (last && Date.now() - last < 30 * 86400000) return '';
+    return '<div class="notice"><b>Pense à sauvegarder tes données.</b> ' + (last ? 'Dernière sauvegarde : ' + new Date(last).toLocaleDateString('fr-FR') + '.' : 'Aucune sauvegarde pour l\'instant.') +
+      '<div style="margin-top:8px"><button class="btn small" data-act="set-backup" type="button">Sauvegarder maintenant</button></div></div>';
+  }
+  async function backupNow() {
+    var json = JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs }, null, 2), day = todayIso();
+    var to = (state.profile.email || '').trim();
+    if (typeof repo.sendMail === 'function' && /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(to)) {
+      toast('Envoi de la sauvegarde…');
+      var b64 = ''; try { b64 = btoa(unescape(encodeURIComponent(json))); } catch (e) { b64 = ''; }
+      var r = b64 ? await repo.sendMail({ to: to, subject: 'Sauvegarde Chantio du ' + frDate(day), message: 'Voici la sauvegarde de tes devis, factures et clients Chantio au ' + frDate(day) + '.\nConserve ce fichier précieusement.', filename: 'chantio-sauvegarde-' + day + '.json', pdf: b64, replyTo: to }) : null;
+      if (r && r.ok) { markBackup(); toast('Sauvegarde envoyée à ' + to + '.'); renderAccueil(); return; }
+    }
+    markBackup(); await saveFile('chantio-sauvegarde-' + day + '.json', json); renderAccueil();
   }
   function stepHtml(act, done, text) { return '<button type="button" class="step' + (done ? ' done' : '') + '" data-act="' + act + '"><span class="dot">' + (done ? ic('check', 14) : '') + '</span><span class="tx">' + esc(text) + '</span></button>'; }
 
@@ -660,7 +726,10 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
         '<p class="kicker" style="margin:0">Pense à exporter tes données de temps en temps pour garder une copie de sauvegarde.</p>' +
         '<p class="kicker" style="margin:0"><a href="mentions-legales.html" target="_blank" rel="noopener">Mentions légales</a> · <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a></p>' +
         '<div class="row2"><button class="btn outline small" data-act="set-export" type="button">' + ic('download', 18) + ' Exporter mes données</button>' +
-        (state.mode === 'db' ? '<button class="btn danger small" data-act="logout" type="button">Se déconnecter</button>' : '') + '</div></div>';
+        (state.mode === 'db' ? '<button class="btn outline small" data-act="set-backup" type="button">' + ic('send', 18) + ' Sauvegarde par e-mail</button>' : '') + '</div>' +
+        '<label class="f">Plafond annuel de chiffre d\'affaires (€)<input data-p="plafondCA" inputmode="numeric" placeholder="83600"></label>' +
+        '<p class="kicker" style="margin:0">Par défaut 83 600 € (prestations de services, 2026 à 2028). Modifie-le si ton activité est différente.</p>' +
+        (state.mode === 'db' ? '<button class="btn danger small" data-act="logout" type="button">Se déconnecter</button>' : '') + '</div>';
     }
     h += '<p class="kicker" style="text-align:center">Tes réglages sont enregistrés automatiquement.</p></div>';
     $('main').innerHTML = h;
@@ -783,6 +852,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     h += '<div class="hero" style="padding:16px"><div class="kicker">' + (fac ? 'Net à payer' : 'Total du devis') + '</div><div class="big">' + fmt(t.net) + '</div>' +
       (fac ? '<div class="kicker">Échéance : ' + esc(frDate(d.echeance)) + (d.devisRef ? ' · Devis ' + esc(d.devisRef) : '') + '</div>' : (t.ap ? '<div class="kicker">Acompte ' + t.ap + ' % : ' + fmt(t.acompte) + '</div>' : '')) + '</div>';
     h += '<button class="btn block" data-act="doc-send" data-id="' + d.id + '" type="button">' + ic('send', 18) + ' Envoyer au client</button>' + (d.envoye ? '<div class="kicker">Envoyé le ' + esc(new Date(d.envoye.at).toLocaleDateString('fr-FR')) + ' à ' + esc(d.envoye.to) + '</div>' : '');
+    if ((!fac && d.statut === 'Envoyé') || (fac && d.statut !== 'Payée' && d.envoye)) h += '<button class="btn outline small block" data-act="doc-relance" data-id="' + d.id + '" type="button">Relancer le client</button>';
     h += '<div class="row2"><button class="btn soft" data-act="viewer-open" data-id="' + d.id + '" type="button">' + ic('file', 18) + ' Aperçu</button><button class="btn" data-act="doc-dl" data-id="' + d.id + '" type="button">' + ic('download', 18) + ' Télécharger</button></div>';
     h += '<button type="button" class="pvthumb" data-act="viewer-open" data-id="' + d.id + '" aria-label="Voir le PDF en grand"><span id="pv-doc"></span><span class="pvhint">Toucher pour voir en grand</span></button>';
     if (!fac) {
@@ -1228,8 +1298,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     if (p.tel) L.push(p.tel);
     return L.join('\n');
   }
-  function openSend(d) {
-    snd = { id: d.id, to: (d.client && d.client.email) || '', subject: (d.type === 'facture' ? 'Facture ' : 'Devis ') + d.numero + ' – ' + (state.profile.nom || 'Mon entreprise'), message: sndMessage(d), busy: false, direct: typeof repo.sendMail === 'function' };
+  function openSend(d, relance) {
+    snd = { id: d.id, to: (d.client && d.client.email) || '', subject: (relance ? 'Relance : ' : '') + (d.type === 'facture' ? 'Facture ' : 'Devis ') + d.numero + ' – ' + (state.profile.nom || 'Mon entreprise'), message: relance ? sndRelance(d) : sndMessage(d), busy: false, direct: typeof repo.sendMail === 'function' };
     var h = (d.envoye ? '<div class="notice">Déjà envoyé le ' + esc(new Date(d.envoye.at).toLocaleDateString('fr-FR')) + ' à ' + esc(d.envoye.to) + '. Tu peux le renvoyer si besoin.</div>' : '') +
       '<label class="f">E-mail du client<input data-snd="to" type="email" inputmode="email" autocapitalize="none" autocomplete="off" value="' + esc(snd.to) + '" placeholder="client@exemple.fr"></label>' +
       '<label class="f">Objet<input data-snd="subject" value="' + esc(snd.subject) + '" autocomplete="off"></label>' +
@@ -1237,7 +1307,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       '<div class="kicker">Le PDF ' + esc(d.numero) + '.pdf est joint automatiquement.</div>' +
       (snd.direct ? '<button class="btn block" id="snd-go" data-act="snd-go" type="button">' + ic('send', 18) + ' ' + (d.envoye ? 'Renvoyer maintenant' : 'Envoyer maintenant') + '</button>' : '') +
       '<button class="btn ' + (snd.direct ? 'soft ' : '') + 'block" data-act="snd-share" type="button">' + (snd.direct ? 'Envoyer avec une autre application' : ic('send', 18) + ' Envoyer le PDF') + '</button>';
-    openSheet(d.type === 'facture' ? 'Envoyer la facture' : 'Envoyer le devis', h);
+    openSheet(relance ? 'Relancer le client' : (d.type === 'facture' ? 'Envoyer la facture' : 'Envoyer le devis'), h);
   }
   async function sndGo() {
     var d = snd && docById(snd.id); if (!d || snd.busy) return;
@@ -1478,6 +1548,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
           '<button class="btn soft block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis (libre)</button>' +
           '<button class="btn soft block" data-act="new-facture" type="button">' + ic('receipt', 18) + ' Nouvelle facture</button>' +
           '<button class="btn outline block" data-act="new-client" type="button">' + ic('users', 18) + ' Nouveau client</button>'); break;
+      case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
+      case 'set-backup': backupNow(); break;
       case 'doc-send': { var dsd = docById(id); if (dsd) openSend(dsd); break; }
       case 'snd-go': sndGo(); break;
       case 'snd-share': sndShare(); break;
@@ -1592,7 +1664,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       case 'logo-del': state.logo = null; loadLogo(); await guard(function () { return repo.saveLogo(); }); refreshAppearance(); break;
       case 'pv-zoom': { var w = $('pvwrap'); if (w) { w.classList.toggle('zoom'); b.textContent = w.classList.contains('zoom') ? 'Page entière' : 'Zoom'; } break; }
       case 'ed-preview': if (ed) openViewer(ed.doc); break;
-      case 'set-export': saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs }, null, 2)); break;
+      case 'set-export': markBackup(); saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs }, null, 2)); break;
     }
   }
   document.addEventListener('click', function (e) {
