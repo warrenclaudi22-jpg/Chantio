@@ -163,9 +163,9 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .phgrid .ph { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--sky); }
 .phgrid .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .phgrid .ph button { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(16,40,59,.75); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
-.bar { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
-.bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
-.bar.hot i { background: var(--bad); }
+.gauge { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
+.gauge i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.gauge.hot i { background: var(--bad); }
 .rlist { display: grid; gap: 8px; margin-top: 8px; }
 .rrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rrow .tx { min-width: 0; font-size: 14px; }
@@ -614,7 +614,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var cap = num(state.profile.plafondCA) || 83600, ca = sumFac(payees), pct = Math.min(100, Math.round(ca / cap * 100));
     var hot = ca >= cap * 0.8;
     return '<div class="stat"><div class="kicker">Plafond auto-entrepreneur</div><div class="mid">' + fmt(ca) + ' <span class="sub">sur ' + fmt(cap) + '</span></div>' +
-      '<div class="bar' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
+      '<div class="gauge' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
       '<div class="sub">' + (hot ? 'Attention : tu approches du plafond (' + pct + ' %).' : pct + ' % utilisé, encaissements de l\'année.') + '</div></div>';
   }
   function relanceList() {
