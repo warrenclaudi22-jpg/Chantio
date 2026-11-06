@@ -360,27 +360,37 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       if (ev === 'PASSWORD_RECOVERY') { state.mode = 'gate'; state.gate = 'reset'; start(); }
       else if (ev === 'SIGNED_OUT') { resetState(); state.mode = 'gate'; state.gate = 'login'; start(); }
     });
-    try {
-      var r = await sb.auth.getSession();
-      if (r.data && r.data.session && state.gate !== 'reset') { await repo.load(r.data.session.user); return; }
-    } catch (e) { /* écran de connexion */ }
+    var r = null;
+    try { r = await sb.auth.getSession(); } catch (e) { r = null; }
+    if (r && r.data && r.data.session && state.gate !== 'reset') { await repo.load(r.data.session.user); return; }
+    if (!navigator.onLine && state.gate !== 'reset') { var lu = readLastUser(); if (lu && lu.id && await offlineFrom(lu)) return; }
     state.mode = 'gate'; if (state.gate !== 'reset') state.gate = 'login';
     start();
   };
   repo.load = async function (user) {
     state.user = user;
-    var r = await sb.from('records').select('kind,id,data');
-    if (r.error) { state.mode = 'gate'; state.gate = 'loaderr'; state.gateMsg = frErr(r.error); start(); return; }
+    outbox = (await kvGet('outbox:' + user.id)) || [];
+    await flushOutbox();
+    var r;
+    try { r = await sb.from('records').select('kind,id,data'); } catch (e) { r = { error: e }; }
+    if (r.error) {
+      if (isNet(r.error) && await offlineFrom(user)) return;
+      state.mode = 'gate'; state.gate = 'loaderr'; state.gateMsg = frErr(r.error); start(); return;
+    }
     applyRows(r.data || []);
+    if (outbox.length) { outbox.forEach(function (o) { var k = o.kind === 'client' ? 'clients' : o.kind === 'doc' ? 'docs' : null; if (!k) return; state[k] = state[k].filter(function (x) { return x.id !== o.id; }); if (o.op === 'upsert') state[k].push(o.data); }); }
+    try { localStorage.setItem('chantio_lastuser', JSON.stringify({ id: user.id, email: user.email })); } catch (e) { /* ignoré */ }
+    persistCache();
     state.gateMsg = ''; state.gateInfo = '';
-    state.mode = 'db'; loadLogo(); start(); repo.syncSign();
+    state.mode = 'db'; loadLogo(); start(); repo.syncSign(); netBar();
   };
   repo.refresh = async function () {
-    if (state.mode !== 'db' || !sb) return;
+    if (state.mode !== 'db' || !sb || !navigator.onLine) return;
+    await flushOutbox(); if (outbox.length) return;
     if (!$('editor').hidden || !$('sheetwrap').hidden || !$('viewer').hidden) return;
     var ae = document.activeElement; if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
-    var r = await sb.from('records').select('kind,id,data'); if (r.error) return;
-    applyRows(r.data || []); loadLogo(); afterData(); repo.syncSign();
+    var r; try { r = await sb.from('records').select('kind,id,data'); } catch (e) { return; } if (r.error) return;
+    applyRows(r.data || []); persistCache(); loadLogo(); afterData(); repo.syncSign();
   };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') repo.refresh(); });
 
@@ -396,7 +406,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var r = await sb.auth.updateUser({ password: pass }); if (r.error) throw r.error;
     var s2 = await sb.auth.getSession(); await repo.load(s2.data.session.user);
   };
-  repo.signOut = async function () { try { await sb.auth.signOut(); } catch (e) { /* ignoré */ } resetState(); state.mode = 'gate'; state.gate = 'login'; start(); };
+  repo.signOut = async function () { try { await flushOutbox(); } catch (e) { /* ignoré */ } try { await sb.auth.signOut(); } catch (e) { /* ignoré */ } try { localStorage.removeItem('chantio_lastuser'); } catch (e) { /* ignoré */ } if (state.user) { await kvSet('cache:' + state.user.id, null); if (!outbox.length) await kvSet('outbox:' + state.user.id, null); } outbox = []; netBar(); resetState(); state.mode = 'gate'; state.gate = 'login'; start(); };
 
   repo.local = function () {
     var d = lsGet(); state.mode = 'local';
@@ -407,28 +417,111 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     try { await fn(); return true; }
     catch (e) { toast(/fetch|network|failed to/i.test(String((e && e.message) || e)) ? 'Pas de connexion internet. Réessaie dans un instant.' : 'Enregistrement impossible. Réessaie dans un instant.'); return false; }
   }
-  async function upsert(kind, id, data) {
-    var r = await sb.from('records').upsert({ user_id: state.user.id, kind: kind, id: id, data: JSON.parse(JSON.stringify(data)), updated_at: new Date().toISOString() }, { onConflict: 'user_id,kind,id' });
-    if (r.error) throw r.error;
+  /* ---------- Hors ligne : copie locale + file d'attente ---------- */
+  var idbP = null, outbox = [], flushing = false;
+  function idb() {
+    return idbP || (idbP = new Promise(function (res) {
+      try { var q = indexedDB.open('chantio', 1); q.onupgradeneeded = function () { q.result.createObjectStore('kv'); }; q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(null); }; } catch (e) { res(null); }
+    }));
   }
+  async function kvGet(k) {
+    var d = await idb(); if (!d) return null;
+    return new Promise(function (res) { try { var r = d.transaction('kv').objectStore('kv').get(k); r.onsuccess = function () { res(r.result == null ? null : r.result); }; r.onerror = function () { res(null); }; } catch (e) { res(null); } });
+  }
+  async function kvSet(k, v) {
+    var d = await idb(); if (!d) return;
+    return new Promise(function (res) { try { var t = d.transaction('kv', 'readwrite'); if (v == null) t.objectStore('kv').delete(k); else t.objectStore('kv').put(v, k); t.oncomplete = function () { res(); }; t.onerror = function () { res(); }; t.onabort = function () { res(); }; } catch (e) { res(); } });
+  }
+  function isNet(e) { var m = String((e && e.message) || e || ''); return !navigator.onLine || /fetch|network|failed to|load failed|timeout/i.test(m); }
+  function snapshotRows() {
+    var rows = [];
+    state.clients.forEach(function (c) { rows.push({ kind: 'client', id: c.id, data: c }); });
+    state.docs.forEach(function (d) { rows.push({ kind: 'doc', id: d.id, data: d }); });
+    rows.push({ kind: 'profile', id: 'main', data: state.profile });
+    if (state.logo) rows.push({ kind: 'logo', id: 'main', data: state.logo });
+    return rows;
+  }
+  async function persistCache() { if (state.user) { try { await kvSet('cache:' + state.user.id, { rows: JSON.parse(JSON.stringify(snapshotRows())), at: Date.now() }); } catch (e) { /* ignoré */ } } }
+  function netBar() {
+    var el = document.getElementById('netbar');
+    if (!el) {
+      el = document.createElement('div'); el.id = 'netbar'; el.setAttribute('role', 'status');
+      el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 6px);z-index:99999;background:#10283b;color:#fff;font:600 13px/1.2 system-ui,sans-serif;padding:8px 14px;border-radius:99px;box-shadow:0 6px 18px rgba(0,0,0,.25);max-width:92vw;text-align:center;pointer-events:none';
+      document.body.appendChild(el);
+    }
+    var off = !navigator.onLine;
+    if (!off && !outbox.length) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = off ? 'Hors ligne' + (outbox.length ? ' · ' + outbox.length + ' modification' + (outbox.length > 1 ? 's' : '') + ' en attente' : ' · tes données sont gardées sur ce téléphone') : 'Synchronisation de ' + outbox.length + ' modification' + (outbox.length > 1 ? 's' : '') + '…';
+  }
+  async function saveOutbox() { if (state.user) await kvSet('outbox:' + state.user.id, outbox.length ? outbox : null); netBar(); }
+  async function queueOp(o) {
+    outbox = outbox.filter(function (x) { return !(x.kind === o.kind && x.id === o.id); }); outbox.push(o); await saveOutbox();
+  }
+  async function flushOutbox() {
+    if (flushing || !outbox.length || !navigator.onLine || !sb || !state.user) return;
+    flushing = true; netBar();
+    try {
+      while (outbox.length) {
+        var o = outbox[0], r;
+        try {
+          r = o.op === 'delete' ? await sb.from('records').delete().eq('kind', o.kind).eq('id', o.id)
+            : await sb.from('records').upsert({ user_id: state.user.id, kind: o.kind, id: o.id, data: o.data, updated_at: new Date().toISOString() }, { onConflict: 'user_id,kind,id' });
+        } catch (e) { r = { error: e }; }
+        if (r.error && isNet(r.error)) break;
+        outbox.shift(); await saveOutbox();
+      }
+    } finally { flushing = false; netBar(); }
+  }
+  async function upsert(kind, id, data) {
+    var o = { op: 'upsert', kind: kind, id: id, data: JSON.parse(JSON.stringify(data)) };
+    if (outbox.length || !navigator.onLine) { await queueOp(o); flushOutbox(); return; }
+    var r;
+    try { r = await sb.from('records').upsert({ user_id: state.user.id, kind: kind, id: id, data: o.data, updated_at: new Date().toISOString() }, { onConflict: 'user_id,kind,id' }); }
+    catch (e) { r = { error: e }; }
+    if (r.error) { if (isNet(r.error)) { await queueOp(o); return; } throw r.error; }
+  }
+  async function removeRow(kind, id) {
+    var o = { op: 'delete', kind: kind, id: id };
+    if (outbox.length || !navigator.onLine) { await queueOp(o); flushOutbox(); return; }
+    var r;
+    try { r = await sb.from('records').delete().eq('kind', kind).eq('id', id); } catch (e) { r = { error: e }; }
+    if (r.error) { if (isNet(r.error)) { await queueOp(o); return; } throw r.error; }
+  }
+  function readLastUser() { try { return JSON.parse(localStorage.getItem('chantio_lastuser') || 'null'); } catch (e) { return null; } }
+  async function offlineFrom(user) {
+    var c = await kvGet('cache:' + user.id); if (!c || !c.rows) return false;
+    state.user = user; outbox = (await kvGet('outbox:' + user.id)) || [];
+    applyRows(c.rows); state.gateMsg = ''; state.gateInfo = ''; state.mode = 'db'; loadLogo(); start(); netBar();
+    return true;
+  }
+  window.addEventListener('offline', function () { netBar(); });
+  window.addEventListener('online', async function () {
+    netBar(); if (state.mode !== 'db' || !sb) return;
+    try {
+      var r = await sb.auth.getSession();
+      if (r.data && r.data.session) { state.user = r.data.session.user; await flushOutbox(); await repo.refresh(); repo.syncSign(); }
+      else toast('Reconnecte-toi pour envoyer tes modifications.');
+    } catch (e) { /* on réessaiera */ }
+  });
   repo.put = async function (kind, obj) {
     if (state.mode === 'db') await upsert(KIND[kind], obj.id, obj);
     var arr = state[kind].filter(function (x) { return x.id !== obj.id; }); arr.push(obj); state[kind] = arr;
-    if (state.mode !== 'db') lsSave();
+    if (state.mode !== 'db') lsSave(); else persistCache();
     afterData();
   };
   repo.del = async function (kind, id) {
-    if (state.mode === 'db') { var r = await sb.from('records').delete().eq('kind', KIND[kind]).eq('id', id); if (r.error) throw r.error; }
+    if (state.mode === 'db') await removeRow(KIND[kind], id);
     state[kind] = state[kind].filter(function (x) { return x.id !== id; });
-    if (state.mode !== 'db') lsSave();
+    if (state.mode !== 'db') lsSave(); else persistCache();
     afterData();
   };
   repo.saveProfile = async function () {
-    if (state.mode === 'db') { await upsert('profile', 'main', state.profile); return; }
+    if (state.mode === 'db') { await upsert('profile', 'main', state.profile); persistCache(); return; }
     lsSave();
   };
   repo.saveLogo = async function () {
-    if (state.mode === 'db') { await upsert('logo', 'main', state.logo ? state.logo : { data: '', w: 0, h: 0 }); return; }
+    if (state.mode === 'db') { await upsert('logo', 'main', state.logo ? state.logo : { data: '', w: 0, h: 0 }); persistCache(); return; }
     lsSave();
   };
 
@@ -1593,6 +1686,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   }
   async function aiSend() {
     if (!ai || ai.busy || !sb) return;
+    if (!navigator.onLine) { toast('Pas de réseau : l\'assistante a besoin d\'internet. Utilise « Devis pas à pas ».'); return; }
     var inp = $('ai-in'), txt = (inp.value || '').trim(); if (!txt) return;
     ai.msgs.push({ role: 'user', content: aiRedact(txt), shown: txt }); inp.value = ''; inp.style.height = ''; ai.busy = true; aiPaint();
     var body = { messages: ai.msgs.map(function (m) { return { role: m.role, content: m.content }; }), draft: ai.draft,
@@ -1646,6 +1740,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   };
   repo.sendMail = async function (p) {
     if (!sb) return { error: 'Non connecté.' };
+    if (!navigator.onLine) return { error: 'Pas de réseau. Réessaie quand tu seras connecté.' };
     try {
       var r = await sb.functions.invoke('envoyer-devis', { body: p });
       if (r.error) { var j = null; try { j = await r.error.context.json(); } catch (x) { /* ignoré */ } return { error: (j && j.error) || 'L\'envoi a échoué.', code: j && j.code }; }
