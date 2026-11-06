@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<title>Devis à signer</title>
+<style>
+:root { --bg:#eef7fd; --surface:#fff; --sky:#dcf0fc; --fg:#10283b; --muted:#587289; --line:#d3e7f4; --accent:#ff8a1f; --on:#10283b; --good:#12875a; --good-soft:#dff4ea; --bad:#c93a2f; --bad-soft:#fbe5e3; --shadow:0 1px 2px rgba(16,40,59,.06),0 10px 28px rgba(16,40,59,.07); }
+@media (prefers-color-scheme: dark) { :root { --bg:#0b1822; --surface:#122434; --sky:#173247; --fg:#e8f2f9; --muted:#8fa9bc; --line:#22394b; --accent:#ff9a3c; --on:#0b1822; --good:#46c98d; --good-soft:#143a2c; --bad:#ff8a80; --bad-soft:#3d1f1d; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px rgba(0,0,0,.25); } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; padding: 16px max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
+.wrap { max-width: 640px; margin: 0 auto; display: grid; gap: 14px; }
+.card { background: var(--surface); border-radius: 20px; padding: 18px; box-shadow: var(--shadow); }
+h1 { font-size: 24px; margin: 0 0 4px; }
+h2 { font-size: 13px; margin: 0 0 8px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.k { color: var(--muted); font-size: 14px; }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.row:first-of-type { border-top: 0; }
+.row .d { min-width: 0; overflow-wrap: anywhere; }
+.row .t { white-space: nowrap; font-weight: 700; }
+.sum { display: flex; justify-content: space-between; padding: 4px 0; }
+.big { font-size: 28px; font-weight: 800; }
+.badge { display: inline-block; padding: 4px 10px; border-radius: 99px; background: var(--sky); font-size: 13px; font-weight: 700; }
+label.f { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+input[type=text] { font: inherit; padding: 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+.chk { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; }
+.chk input { width: 24px; height: 24px; margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+button { font: inherit; font-weight: 800; border: 0; border-radius: 16px; padding: 16px; background: var(--accent); color: var(--on); width: 100%; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.msg { border-radius: 14px; padding: 12px 14px; font-size: 15px; }
+.msg.ok { background: var(--good-soft); color: var(--good); }
+.msg.err { background: var(--bad-soft); color: var(--bad); }
+.foot { text-align: center; font-size: 12px; color: var(--muted); }
+
+.hero { background: linear-gradient(135deg, #ff9a3c, #ff7a00); color: #1b1208; border-radius: 24px; padding: 22px 20px; box-shadow: 0 14px 34px rgba(255,122,0,.28); }
+.hero .co { font-weight: 700; font-size: 14px; opacity: .8; }
+.hero h1 { font-size: 15px; font-weight: 700; margin: 2px 0 14px; opacity: .85; }
+.hero .amt { font-size: 40px; font-weight: 800; letter-spacing: -.02em; line-height: 1.05; }
+.hero .meta { margin-top: 10px; font-size: 14px; opacity: .85; }
+.steps { display: flex; gap: 8px; font-size: 13px; color: var(--muted); font-weight: 600; justify-content: center; }
+.steps span { display: inline-flex; align-items: center; gap: 6px; }
+.steps i { width: 22px; height: 22px; border-radius: 50%; background: var(--sky); color: var(--fg); display: inline-grid; place-items: center; font-style: normal; font-size: 12px; }
+.sticky { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px max(16px, env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); background: linear-gradient(to top, var(--bg) 70%, transparent); transition: transform .25s, opacity .25s; }
+.sticky.hide { transform: translateY(120%); opacity: 0; pointer-events: none; }
+.sticky button { max-width: 608px; display: block; margin: 0 auto; box-shadow: 0 10px 26px rgba(255,122,0,.35); }
+.tick { width: 64px; height: 64px; border-radius: 50%; background: var(--good-soft); color: var(--good); display: grid; place-items: center; margin: 0 auto 12px; font-size: 34px; animation: pop .45s cubic-bezier(.2,1.4,.4,1); }
+@keyframes pop { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.center { text-align: center; }
+input[type=text]:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255,138,31,.2); }
+body { padding-bottom: 96px; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><div class="card">Chargement du devis…</div></div>
+<script src="config.js"></script>
+<script>
+(function () {
+  var app = document.getElementById('app');
+  var cfg = window.CHANTIO_CONFIG || {};
+  var token = new URLSearchParams(location.search).get('t') || '';
+  var view = null;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function frDate(iso) { if (!iso) return ''; var p = String(iso).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+  function frStamp(iso) { try { return new Date(iso).toLocaleString('fr-FR', { timeZone: 'Europe/Paris', dateStyle: 'long', timeStyle: 'short' }); } catch (e) { return iso; } }
+  async function call(body) {
+    var r = await fetch(cfg.SUPABASE_URL + '/functions/v1/signature-publique', { method: 'POST', headers: { 'Content-Type': 'application/json', apikey: cfg.SUPABASE_ANON_KEY || '' }, body: JSON.stringify(body) });
+    var j = null; try { j = await r.json(); } catch (e) { /* ignoré */ }
+    return { ok: r.ok, status: r.status, j: j || {} };
+  }
+  function fail(msg) { var st = document.querySelector('.sticky'); if (st) st.remove(); app.innerHTML = '<div class="card"><h1>Devis indisponible</h1><div class="msg err" style="margin-top:12px">' + esc(msg) + '</div></div>'; }
+  function head(v, signed) {
+    var p = v.profile || {};
+    return '<div class="hero"><div class="co">' + esc(p.nom || '') + '</div><h1>Devis ' + esc(v.numero) + '</h1><div class="amt">' + esc(v.net) + '</div><div class="meta">' + (signed ? 'Devis accepté' : 'Valable jusqu\'au ' + esc(frDate(v.until))) + (v.tva ? ' · ' + esc(v.tva) : '') + '</div></div>';
+  }
+  function body(v) {
+    var h = '';
+    var c = v.client || {}, ch = v.chantier || {};
+    h += '<div class="card"><h2>Client et chantier</h2><div><b>' + esc(c.nom || '') + '</b></div>' + (ch.objet ? '<div>' + esc(ch.objet) + '</div>' : '') + (ch.adresse ? '<div class="k">' + esc(ch.adresse) + '</div>' : '') + '</div>';
+    h += '<div class="card"><h2>Prestations</h2>' + (v.lignes || []).map(function (l) {
+      return '<div class="row"><div class="d">' + esc(l.des) + '<div class="k">' + esc(l.qte) + ' ' + esc(l.unite) + ' × ' + esc(l.pu) + ' €</div></div><div class="t">' + esc(l.total) + '</div></div>';
+    }).join('');
+    if (Number(v.rp) > 0) h += '<div class="sum"><span>Sous-total</span><span>' + esc(v.brut) + '</span></div><div class="sum"><span>Remise ' + esc(v.rp) + ' %</span><span>− ' + esc(v.remise) + '</span></div>';
+    h += '<div class="sum" style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px"><span><b>Total</b></span><span class="big">' + esc(v.net) + '</span></div>';
+    if (v.tva) h += '<div class="k">' + esc(v.tva) + '</div>';
+    if (Number(v.ap) > 0) h += '<div style="margin-top:8px"><span class="badge">Acompte ' + esc(v.ap) + ' % : ' + esc(v.acompte) + '</span></div>';
+    h += '</div>';
+    if (v.delai || v.notes) h += '<div class="card"><h2>Informations</h2>' + (v.delai ? '<div>Délai : ' + esc(v.delai) + '</div>' : '') + (v.notes ? '<div style="white-space:pre-wrap">' + esc(v.notes) + '</div>' : '') + '</div>';
+    return h;
+  }
+  function signedView(v, name, at) {
+    app.innerHTML = head(v, true) + '<div class="card center"><div class="tick">✓</div><h1 style="font-size:22px">Merci, c\'est signé !</h1><p class="k" style="margin:6px 0 0">Signé par <b>' + esc(name) + '</b><br>le ' + esc(frStamp(at)) + '</p><p class="k">L\'entreprise vient d\'être prévenue et reviendra vers vous.</p></div>' + body(v) + foot(v);
+  }
+  function foot(v) {
+    var p = v.profile || {};
+    var bits = [p.nom, p.adresse, p.siret ? 'SIRET ' + p.siret : '', p.tel, p.email].filter(Boolean).map(esc).join(' · ');
+    return '<p class="foot">' + bits + '</p>';
+  }
+  function form(v) {
+    app.innerHTML = head(v) + '<div class="steps"><span><i>1</i> Lisez</span><span>›</span><span><i>2</i> Signez</span></div>' + body(v) +
+      '<div class="card" id="signbox"><h2>Accepter ce devis</h2>' +
+      '<label class="f">Votre nom et prénom<input type="text" id="nm" autocomplete="name" placeholder="Ex. Marie Dupont"></label>' +
+      '<label class="chk" style="margin:14px 0"><input type="checkbox" id="ok"><span>J\'ai pris connaissance du devis ' + esc(v.numero) + ' d\'un montant de <b>' + esc(v.net) + '</b> et je l\'accepte. <b>Bon pour accord.</b></span></label>' +
+      '<div id="err"></div><button id="go" type="button" disabled>Signer le devis</button>' +
+      '<p class="k" style="margin:10px 0 0">Votre nom, la date, l\'heure et l\'adresse IP de votre connexion sont enregistrés comme preuve de votre acceptation.</p></div>' + foot(v);
+    var sk = document.createElement('div'); sk.className = 'sticky'; sk.innerHTML = '<button type="button">Accepter le devis</button>'; document.body.appendChild(sk);
+    var box = document.getElementById('signbox');
+    sk.firstChild.addEventListener('click', function () { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+    if (window.IntersectionObserver) new IntersectionObserver(function (en) { sk.classList.toggle('hide', en[0].isIntersecting); }, { threshold: 0.35 }).observe(box);
+    var nm = document.getElementById('nm'), ok = document.getElementById('ok'), go = document.getElementById('go'), err = document.getElementById('err');
+    function upd() { go.disabled = !(nm.value.trim().length >= 2 && ok.checked); }
+    nm.addEventListener('input', upd); ok.addEventListener('change', upd);
+    go.addEventListener('click', async function () {
+      go.disabled = true; go.textContent = 'Enregistrement…'; err.innerHTML = '';
+      var r;
+      try { r = await call({ action: 'sign', token: token, name: nm.value, accepted: true }); } catch (e) { r = { ok: false, j: { error: 'Connexion impossible. Vérifiez votre réseau et réessayez.' } }; }
+      if (r.ok && r.j.ok) { var st = document.querySelector('.sticky'); if (st) st.remove(); signedView(v, nm.value.trim().replace(/\s+/g, ' '), r.j.signed_at); window.scrollTo(0, 0); return; }
+      if (r.status === 409) { load(); return; }
+      err.innerHTML = '<div class="msg err" style="margin-bottom:12px">' + esc(r.j.error || 'Une erreur est survenue.') + '</div>';
+      go.textContent = 'Signer le devis'; upd();
+    });
+  }
+  async function load() {
+    if (!token || !cfg.SUPABASE_URL) { fail('Lien invalide.'); return; }
+    var r;
+    try { r = await call({ action: 'get', token: token }); } catch (e) { fail('Connexion impossible. Vérifiez votre réseau et réessayez.'); return; }
+    if (!r.ok) { fail(r.j.error || 'Ce lien n\'est plus valable.'); return; }
+    view = r.j.view;
+    if (r.j.status === 'signed') { signedView(view, r.j.signed_name, r.j.signed_at); return; }
+    if (r.j.status === 'replaced') { fail('Ce devis a été mis à jour. Utilisez le lien du dernier message reçu.'); return; }
+    if (r.j.status === 'expired') { fail('Ce lien a expiré. Contactez l\'entreprise pour en recevoir un nouveau.'); return; }
+    form(view);
+  }
+  load();
+})();
+</script>
+</body>
+</html>

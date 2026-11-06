@@ -373,14 +373,14 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     if (r.error) { state.mode = 'gate'; state.gate = 'loaderr'; state.gateMsg = frErr(r.error); start(); return; }
     applyRows(r.data || []);
     state.gateMsg = ''; state.gateInfo = '';
-    state.mode = 'db'; loadLogo(); start();
+    state.mode = 'db'; loadLogo(); start(); repo.syncSign();
   };
   repo.refresh = async function () {
     if (state.mode !== 'db' || !sb) return;
     if (!$('editor').hidden || !$('sheetwrap').hidden || !$('viewer').hidden) return;
     var ae = document.activeElement; if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
     var r = await sb.from('records').select('kind,id,data'); if (r.error) return;
-    applyRows(r.data || []); loadLogo(); afterData();
+    applyRows(r.data || []); loadLogo(); afterData(); repo.syncSign();
   };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') repo.refresh(); });
 
@@ -643,6 +643,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     } else {
       L.push('Je me permets de revenir vers vous au sujet de notre devis n° ' + d.numero + ' d\'un montant de ' + fmt(t.net) + (d.envoye ? ', envoyé le ' + new Date(d.envoye.at).toLocaleDateString('fr-FR') : '') + '.');
       L.push('Avez-vous eu le temps de l\'étudier ? Je reste disponible pour répondre à vos questions ou ajuster la proposition.');
+      if (canSign(d)) L.push('Vous pouvez le signer en ligne en un clic : ' + SIGN_TAG);
     }
     L.push('', 'Cordialement,', p.nom || ''); if (p.tel) L.push(p.tel);
     return L.join('\n');
@@ -903,6 +904,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     h += '<div class="hero" style="padding:16px"><div class="kicker">' + (fac ? 'Net à payer' : 'Total du devis') + '</div><div class="big">' + fmt(t.net) + '</div>' +
       (fac ? '<div class="kicker">Échéance : ' + esc(frDate(d.echeance)) + (d.devisRef ? ' · Devis ' + esc(d.devisRef) : '') + '</div>' : (t.ap ? '<div class="kicker">Acompte ' + t.ap + ' % : ' + fmt(t.acompte) + '</div>' : '')) + '</div>';
     h += '<button class="btn block" data-act="doc-send" data-id="' + d.id + '" type="button">' + ic('send', 18) + ' Envoyer au client</button>' + (d.envoye ? '<div class="kicker">Envoyé le ' + esc(new Date(d.envoye.at).toLocaleDateString('fr-FR')) + ' à ' + esc(d.envoye.to) + '</div>' : '');
+    if (d.signe) h += '<div class="notice">✓ Signé en ligne par <b>' + esc(d.signe.name) + '</b> le ' + esc(new Date(d.signe.at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' })) + '</div>';
     if ((!fac && d.statut === 'Envoyé') || (fac && d.statut !== 'Payée' && d.envoye)) h += '<button class="btn outline small block" data-act="doc-relance" data-id="' + d.id + '" type="button">Relancer le client</button>';
     h += '<div class="row2"><button class="btn soft" data-act="viewer-open" data-id="' + d.id + '" type="button">' + ic('file', 18) + ' Aperçu</button><button class="btn" data-act="doc-dl" data-id="' + d.id + '" type="button">' + ic('download', 18) + ' Télécharger</button></div>';
     h += '<button type="button" class="pvthumb" data-act="viewer-open" data-id="' + d.id + '" aria-label="Voir le PDF en grand"><span id="pv-doc"></span><span class="pvhint">Toucher pour voir en grand</span></button>';
@@ -1352,6 +1354,20 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 
   /* ---------- Envoyer au client ---------- */
   var snd = null;
+  var SIGN_TAG = '[lien de signature]';
+  function canSign(d) { return d.type === 'devis' && typeof repo.signLink === 'function'; }
+  function signStrip(msg) { return msg.split('\n').filter(function (l) { return l.indexOf(SIGN_TAG) < 0; }).join('\n').replace(/\n{3,}/g, '\n\n'); }
+  function signView(d) {
+    var t = total(d), p = state.profile, c = d.client || {}, ch = d.chantier || {};
+    return {
+      numero: d.numero, date: d.date, validite: d.validite || '30', until: addDays(d.date, num(d.validite) || 30),
+      client: { nom: c.nom || '' }, chantier: { objet: ch.objet || '', adresse: ch.adresse || '' },
+      lignes: d.lignes.map(function (l) { return { des: l.des || '', qte: l.qte, unite: l.unite || '', pu: l.pu, total: fmt(lineTotal(l)) }; }),
+      brut: fmt(t.brut), rp: t.rp, remise: fmt(t.remise), net: fmt(t.net), ap: t.ap, acompte: fmt(t.acompte),
+      delai: d.delai || '', notes: d.notes || '', tva: p.mentionTva || '',
+      profile: { nom: p.nom || '', tel: p.tel || '', email: p.email || '', adresse: p.adresse || '', siret: p.siret || '' }
+    };
+  }
   function sndMessage(d) {
     var p = state.profile, t = total(d), fac = d.type === 'facture', who = (d.client && d.client.nom) ? d.client.nom : '';
     var L = ['Bonjour' + (who ? ' ' + who : '') + ',', ''];
@@ -1360,7 +1376,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       : 'Suite à notre échange, veuillez trouver ci-joint notre devis n° ' + d.numero + (d.chantier.objet ? ' pour : ' + d.chantier.objet : '') + ', d\'un montant de ' + fmt(t.net) + '.');
     if (!fac && t.ap) L.push('Un acompte de ' + t.ap + ' % (' + fmt(t.acompte) + ') est demandé à la commande.');
     L.push(fac ? 'Le règlement est attendu avant le ' + frDate(d.echeance) + '.' : 'Ce devis est valable ' + (d.validite || '30') + ' jours.');
-    L.push('', fac ? 'Je reste à votre disposition pour toute question.' : 'Pour l\'accepter, merci de me le retourner signé avec la mention « Bon pour accord ». Je reste à votre disposition pour toute question.', '', 'Cordialement,', p.nom || '');
+    L.push('', fac ? 'Je reste à votre disposition pour toute question.' : (canSign(d) ? 'Pour l\'accepter, signez-le en ligne en un clic : ' + SIGN_TAG + '\nVous pouvez aussi me le retourner signé avec la mention « Bon pour accord ». Je reste à votre disposition pour toute question.' : 'Pour l\'accepter, merci de me le retourner signé avec la mention « Bon pour accord ». Je reste à votre disposition pour toute question.'), '', 'Cordialement,', p.nom || '');
     if (p.tel) L.push(p.tel);
     return L.join('\n');
   }
@@ -1382,8 +1398,13 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var doc = null; try { doc = buildPdf(d); } catch (e) { doc = null; }
     if (!doc) { toast('La création du PDF n\'est pas disponible pour le moment.'); return; }
     snd.busy = true; var btn = $('snd-go'); if (btn) { btn.disabled = true; btn.textContent = 'Envoi en cours…'; }
+    var msg = snd.message;
+    if (msg.indexOf(SIGN_TAG) >= 0) {
+      var lr = canSign(d) ? await repo.signLink(d.id, signView(d)) : null;
+      if (lr && lr.url) { msg = msg.split(SIGN_TAG).join(lr.url); d.sign = { token: lr.token, at: Date.now() }; } else { msg = signStrip(msg); }
+    }
     var b64 = String(doc.output('datauristring')).split('base64,')[1] || '';
-    var r = await repo.sendMail({ to: to, subject: snd.subject, message: snd.message, filename: d.numero + '.pdf', pdf: b64, replyTo: state.profile.email || '' });
+    var r = await repo.sendMail({ to: to, subject: snd.subject, message: msg, filename: d.numero + '.pdf', pdf: b64, replyTo: state.profile.email || '' });
     snd.busy = false;
     if (r && r.ok) {
       d.envoye = { at: Date.now(), to: to };
@@ -1406,7 +1427,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     var name = d.numero + '.pdf', data = doc.output('arraybuffer');
     try {
       var file = new File([data], name, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: snd.subject, text: snd.message }); if (to) toast('E-mail du client copié : colle-le dans « À ».'); return; }
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: snd.subject, text: signStrip(snd.message) }); if (to) toast('E-mail du client copié : colle-le dans « À ».'); return; }
     } catch (e) { if (e && e.name === 'AbortError') return; }
     await saveFile(name, data);
   }
@@ -1587,6 +1608,30 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     ai = null; closeSheet(); openEditor(d, true);
   }
 
+  repo.signLink = async function (docId, view) {
+    if (!sb) return null;
+    try {
+      var r = await sb.functions.invoke('signature-devis', { body: { action: 'create', docId: docId, view: view } });
+      if (r.error || !r.data || !r.data.token) return null;
+      return { token: r.data.token, url: new URL('signer.html?t=' + r.data.token, location.href).href };
+    } catch (e) { return null; }
+  };
+  repo.syncSign = async function () {
+    if (state.mode !== 'db' || !sb) return;
+    try {
+      var r = await sb.functions.invoke('signature-devis', { body: { action: 'sync' } });
+      var L = (r && r.data && r.data.signed) || [], changed = 0;
+      for (var i = 0; i < L.length; i++) {
+        var d = state.docs.find(function (x) { return x.id === L[i].doc_id; });
+        if (!d || d.type !== 'devis' || d.signe) continue;
+        d.signe = { name: L[i].signed_name, at: L[i].signed_at };
+        if (d.statut !== 'Accepté') d.statut = 'Accepté';
+        await repo.put('docs', d); changed++;
+        toast('Devis ' + d.numero + ' signé par ' + L[i].signed_name + ' !');
+      }
+      if (changed) afterData();
+    } catch (e) { /* ignoré : la signature en ligne n'est pas activée ou le réseau manque */ }
+  };
   repo.sendMail = async function (p) {
     if (!sb) return { error: 'Non connecté.' };
     try {

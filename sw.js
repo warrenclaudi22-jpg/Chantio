@@ -1,6 +1,6 @@
 // Service worker de Chantio : ouverture rapide et fonctionnement de base hors connexion.
 // Les données de l'utilisateur ne sont jamais mises en cache ici (elles passent par Supabase).
-const CACHE = 'chantio-v8';
+const CACHE = 'chantio-v10';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'mentions-legales.html', 'confidentialite.html', 'legal.js'];
 
 self.addEventListener('install', (e) => {
@@ -16,7 +16,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (/supabase\.(co|in)$/.test(url.hostname)) return;
   if (url.origin === location.origin) {
-    e.respondWith(fetch(req).then((res) => keep(req, res)).catch(() => caches.match(req).then((r) => r || caches.match('index.html'))));
+    e.respondWith(fetch(req, { cache: 'no-cache' }).then((res) => keep(req, res)).catch(() => caches.match(req).then((r) => r || caches.match('index.html'))));
   } else if (/(jsdelivr|cdnjs|googleapis|gstatic)/.test(url.hostname)) {
     e.respondWith(caches.match(req).then((hit) => {
       const net = fetch(req).then((res) => keep(req, res)).catch(() => hit);
