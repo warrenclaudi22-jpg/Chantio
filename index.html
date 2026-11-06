@@ -599,6 +599,12 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     edPhotos();
     toast(skipped ? 'Certaines photos n\'ont pas pu être ajoutées (6 maximum).' : 'Photo' + (list.length > 1 ? 's ajoutées' : ' ajoutée') + '.');
   }
+  var sigCache = {};
+  function sigImg(data) {
+    var c = sigCache[data];
+    if (!c) { var im = new Image(); c = sigCache[data] = { el: im, data: data, fmt: 'PNG', w: 600, h: 240 }; im.onload = function () { refreshPreviews(); }; im.src = data; }
+    return c;
+  }
   var photoCache = {};
   function photoImg(ph) {
     var c = photoCache[ph.data];
@@ -1169,7 +1175,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     y = Math.max(ly, ry) + 6;
 
     /* --- signature ou échéance --- */
-    var showSign = fac || p.showSign !== 'off';
+    var showSign = fac || p.showSign !== 'off' || !!(d.signe && !fac);
     if (showSign && y + 34 > limit) { b.newPage(); y = 14; }
     if (fac) {
       b.rect(PM, y, PCW, 16, { fill: sky, r: 3 });
@@ -1179,7 +1185,13 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     } else if (showSign) {
       b.rect(PM, y, 96, 32, { stroke: '#9bb6c8', lw: 0.4, r: 3 });
       T('BON POUR ACCORD', PM + 5, y + 4, 7.5, { bold: true, color: accDark });
-      T('Date, signature du client précédée de la mention « Bon pour accord ».', PM + 5, y + 9, 7.5, { color: MUTED });
+      if (d.signe) {
+        T('Bon pour accord', PM + 5, y + 10, 9, { bold: true, color: INK });
+        wrapT(b, 'Signé en ligne par ' + d.signe.name, 52, 7.5, false).slice(0, 2).forEach(function (s2, k) { T(s2, PM + 5, y + 15 + k * lh(7.5), 7.5, { color: INK }); });
+        var sd = new Date(d.signe.at);
+        T('le ' + sd.toLocaleDateString('fr-FR') + ' à ' + sd.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }), PM + 5, y + 27, 7, { color: MUTED });
+        if (d.signe.img) b.image(sigImg(d.signe.img), PM + 58, y + 8, 34, 13.6, 1);
+      } else T('Date, signature du client précédée de la mention « Bon pour accord ».', PM + 5, y + 9, 7.5, { color: MUTED });
       var until = addDays(d.date, parseInt(d.validite, 10) || 30);
       b.rect(PM + 102, y, PCW - 102, 32, { fill: sky, r: 3 });
       T('VALIDITÉ DE L\'OFFRE', PM + 108, y + 4, 7.5, { bold: true, color: accDark });
@@ -1624,7 +1636,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       for (var i = 0; i < L.length; i++) {
         var d = state.docs.find(function (x) { return x.id === L[i].doc_id; });
         if (!d || d.type !== 'devis' || d.signe) continue;
-        d.signe = { name: L[i].signed_name, at: L[i].signed_at };
+        d.signe = { name: L[i].signed_name, at: L[i].signed_at, img: L[i].signed_image || '' };
         if (d.statut !== 'Accepté') d.statut = 'Accepté';
         await repo.put('docs', d); changed++;
         toast('Devis ' + d.numero + ' signé par ' + L[i].signed_name + ' !');

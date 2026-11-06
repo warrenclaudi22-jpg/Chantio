@@ -50,6 +50,13 @@ button:disabled { opacity: .5; cursor: default; }
 .center { text-align: center; }
 input[type=text]:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(255,138,31,.2); }
 body { padding-bottom: 96px; }
+
+.pad { position: relative; border-radius: 16px; background: #fff; border: 1.5px dashed #9bb6c8; overflow: hidden; }
+.pad canvas { display: block; width: 100%; aspect-ratio: 5 / 2; touch-action: none; cursor: crosshair; }
+.pad .hint { position: absolute; inset: 0; display: grid; place-items: center; color: #8fa9bc; font-size: 15px; pointer-events: none; text-align: center; padding: 0 12px; }
+.pad .line { position: absolute; left: 6%; right: 6%; bottom: 22%; border-top: 1.5px solid #d3e7f4; pointer-events: none; }
+.ghost { background: transparent; color: var(--muted); padding: 6px 4px; width: auto; font-weight: 600; font-size: 14px; }
+.sigimg { background: #fff; border-radius: 12px; padding: 6px; max-width: 220px; margin: 10px auto 0; display: block; }
 </style>
 </head>
 <body>
@@ -89,8 +96,8 @@ body { padding-bottom: 96px; }
     if (v.delai || v.notes) h += '<div class="card"><h2>Informations</h2>' + (v.delai ? '<div>Délai : ' + esc(v.delai) + '</div>' : '') + (v.notes ? '<div style="white-space:pre-wrap">' + esc(v.notes) + '</div>' : '') + '</div>';
     return h;
   }
-  function signedView(v, name, at) {
-    app.innerHTML = head(v, true) + '<div class="card center"><div class="tick">✓</div><h1 style="font-size:22px">Merci, c\'est signé !</h1><p class="k" style="margin:6px 0 0">Signé par <b>' + esc(name) + '</b><br>le ' + esc(frStamp(at)) + '</p><p class="k">L\'entreprise vient d\'être prévenue et reviendra vers vous.</p></div>' + body(v) + foot(v);
+  function signedView(v, name, at, img) {
+    app.innerHTML = head(v, true) + '<div class="card center"><div class="tick">✓</div><h1 style="font-size:22px">Merci, c\'est signé !</h1><p class="k" style="margin:6px 0 0">Signé par <b>' + esc(name) + '</b><br>le ' + esc(frStamp(at)) + '</p>' + (img ? '<img class="sigimg" alt="Signature" src="' + esc(img) + '">' : '') + '<p class="k">L\'entreprise vient d\'être prévenue et reviendra vers vous.</p></div>' + body(v) + foot(v);
   }
   function foot(v) {
     var p = v.profile || {};
@@ -101,6 +108,8 @@ body { padding-bottom: 96px; }
     app.innerHTML = head(v) + '<div class="steps"><span><i>1</i> Lisez</span><span>›</span><span><i>2</i> Signez</span></div>' + body(v) +
       '<div class="card" id="signbox"><h2>Accepter ce devis</h2>' +
       '<label class="f">Votre nom et prénom<input type="text" id="nm" autocomplete="name" placeholder="Ex. Marie Dupont"></label>' +
+      '<div style="margin-top:14px"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:14px">Votre signature</b><button type="button" class="ghost" id="clr">Effacer</button></div>' +
+      '<div class="pad"><canvas id="cv" width="600" height="240"></canvas><div class="line"></div><div class="hint" id="hint">Signez ici avec votre doigt</div></div></div>' +
       '<label class="chk" style="margin:14px 0"><input type="checkbox" id="ok"><span>J\'ai pris connaissance du devis ' + esc(v.numero) + ' d\'un montant de <b>' + esc(v.net) + '</b> et je l\'accepte. <b>Bon pour accord.</b></span></label>' +
       '<div id="err"></div><button id="go" type="button" disabled>Signer le devis</button>' +
       '<p class="k" style="margin:10px 0 0">Votre nom, la date, l\'heure et l\'adresse IP de votre connexion sont enregistrés comme preuve de votre acceptation.</p></div>' + foot(v);
@@ -109,13 +118,21 @@ body { padding-bottom: 96px; }
     sk.firstChild.addEventListener('click', function () { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
     if (window.IntersectionObserver) new IntersectionObserver(function (en) { sk.classList.toggle('hide', en[0].isIntersecting); }, { threshold: 0.35 }).observe(box);
     var nm = document.getElementById('nm'), ok = document.getElementById('ok'), go = document.getElementById('go'), err = document.getElementById('err');
-    function upd() { go.disabled = !(nm.value.trim().length >= 2 && ok.checked); }
+    var cv = document.getElementById('cv'), cx = cv.getContext('2d'), hint = document.getElementById('hint'), drawing = false, pts = 0, last = null;
+    cx.lineWidth = 5; cx.lineCap = 'round'; cx.lineJoin = 'round'; cx.strokeStyle = '#10283b';
+    function pos(e) { var r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; }
+    cv.addEventListener('pointerdown', function (e) { e.preventDefault(); drawing = true; last = pos(e); try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignoré */ } cx.beginPath(); cx.arc(last.x, last.y, 2.5, 0, 6.3); cx.fillStyle = '#10283b'; cx.fill(); pts += 3; hint.hidden = true; upd(); });
+    cv.addEventListener('pointermove', function (e) { if (!drawing) return; e.preventDefault(); var q = pos(e); cx.beginPath(); cx.moveTo(last.x, last.y); cx.lineTo(q.x, q.y); cx.stroke(); last = q; pts++; });
+    function stop() { if (drawing) { drawing = false; upd(); } }
+    cv.addEventListener('pointerup', stop); cv.addEventListener('pointercancel', stop); cv.addEventListener('pointerleave', stop);
+    document.getElementById('clr').addEventListener('click', function () { cx.clearRect(0, 0, cv.width, cv.height); pts = 0; hint.hidden = false; upd(); });
+    function upd() { go.disabled = !(nm.value.trim().length >= 2 && ok.checked && pts >= 12); }
     nm.addEventListener('input', upd); ok.addEventListener('change', upd);
     go.addEventListener('click', async function () {
       go.disabled = true; go.textContent = 'Enregistrement…'; err.innerHTML = '';
       var r;
-      try { r = await call({ action: 'sign', token: token, name: nm.value, accepted: true }); } catch (e) { r = { ok: false, j: { error: 'Connexion impossible. Vérifiez votre réseau et réessayez.' } }; }
-      if (r.ok && r.j.ok) { var st = document.querySelector('.sticky'); if (st) st.remove(); signedView(v, nm.value.trim().replace(/\s+/g, ' '), r.j.signed_at); window.scrollTo(0, 0); return; }
+      try { r = await call({ action: 'sign', token: token, name: nm.value, accepted: true, image: cv.toDataURL('image/png') }); } catch (e) { r = { ok: false, j: { error: 'Connexion impossible. Vérifiez votre réseau et réessayez.' } }; }
+      if (r.ok && r.j.ok) { var st = document.querySelector('.sticky'); if (st) st.remove(); signedView(v, nm.value.trim().replace(/\s+/g, ' '), r.j.signed_at, cv.toDataURL('image/png')); window.scrollTo(0, 0); return; }
       if (r.status === 409) { load(); return; }
       err.innerHTML = '<div class="msg err" style="margin-bottom:12px">' + esc(r.j.error || 'Une erreur est survenue.') + '</div>';
       go.textContent = 'Signer le devis'; upd();
@@ -127,7 +144,7 @@ body { padding-bottom: 96px; }
     try { r = await call({ action: 'get', token: token }); } catch (e) { fail('Connexion impossible. Vérifiez votre réseau et réessayez.'); return; }
     if (!r.ok) { fail(r.j.error || 'Ce lien n\'est plus valable.'); return; }
     view = r.j.view;
-    if (r.j.status === 'signed') { signedView(view, r.j.signed_name, r.j.signed_at); return; }
+    if (r.j.status === 'signed') { signedView(view, r.j.signed_name, r.j.signed_at, r.j.signed_image); return; }
     if (r.j.status === 'replaced') { fail('Ce devis a été mis à jour. Utilisez le lien du dernier message reçu.'); return; }
     if (r.j.status === 'expired') { fail('Ce lien a expiré. Contactez l\'entreprise pour en recevoir un nouveau.'); return; }
     form(view);
