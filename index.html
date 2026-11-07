@@ -164,6 +164,10 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .phgrid .ph { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: var(--sky); }
 .phgrid .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .phgrid .ph button { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(16,40,59,.75); color: #fff; font-size: 16px; line-height: 1; cursor: pointer; }
+.cstats .mid.warnc { color: var(--accent-ink, #c2570c); }
+.kicker.late { color: var(--bad); }
+.rbtn { display: grid; gap: 6px; min-width: 104px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
 .gauge { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
 .gauge i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 .gauge.hot i { background: var(--bad); }
@@ -340,7 +344,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     if (isDue(d) && d.echeance && d.echeance < todayIso()) return 'En retard';
     return d.statut;
   }
-  function pillClass(s) { return { 'Brouillon': 'grey', 'Envoyé': '', 'Accepté': 'good', 'Refusé': 'bad', 'À payer': 'warn', 'Payée': 'good', 'En retard': 'bad', 'Annulée': 'grey', 'Émis': '' }[s] || ''; }
+  function pillClass(s) { return { 'Brouillon': 'grey', 'Envoyé': '', 'Accepté': 'good', 'Refusé': 'bad', 'À payer': 'warn', 'Payée': 'good', 'En retard': 'bad', 'Annulée': 'grey', 'Expiré': 'warn', 'Émis': '' }[s] || ''; }
   var pill = function (s) { return '<span class="pill ' + pillClass(s) + '">' + esc(s) + '</span>'; };
   var nom = function (d) { return (d.client && d.client.nom) || 'Client non renseigné'; };
 
@@ -581,7 +585,19 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   window.addEventListener('hashchange', function () { var n = location.hash.slice(1); if (ROUTES.indexOf(n) >= 0 && n !== state.route) { state.route = n; render(); } });
 
   /* ---------- Vues ---------- */
+  function sanitizeDocs() {
+    if (!Array.isArray(state.docs)) state.docs = [];
+    state.docs = state.docs.filter(function (d) { return d && typeof d === 'object'; });
+    state.docs.forEach(function (d) {
+      if (!d.client || typeof d.client !== 'object') d.client = { id: '', nom: '', adresse: '', tel: '', email: '' };
+      if (!d.chantier || typeof d.chantier !== 'object') d.chantier = { adresse: '', objet: '' };
+      if (!Array.isArray(d.lignes)) d.lignes = [];
+    });
+    if (!Array.isArray(state.clients)) state.clients = [];
+    state.clients = state.clients.filter(function (c) { return c && typeof c === 'object'; });
+  }
   function render() {
+    sanitizeDocs();
     document.querySelectorAll('nav.dock .tab').forEach(function (b) { b.setAttribute('aria-current', b.getAttribute('data-go') === state.route ? 'page' : 'false'); });
     var acc = $('acc'); acc.textContent = state.mode === 'db' ? ((state.user && state.user.email) || 'Connecté') : state.mode === 'local' ? 'Mode démo' : '';
     acc.hidden = state.mode === 'gate' || state.mode === 'pending';
@@ -599,6 +615,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
     else if (state.themeSet) { r.removeAttribute('data-theme'); state.themeSet = false; }
   }
   function afterData() {
+    sanitizeDocs();
     if (state.mode === 'pending' || state.mode === 'gate') return;
     applyTheme();
     if (state.route === 'accueil') renderAccueil();
@@ -675,7 +692,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       '<button class="btn" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 20) + ' Créer un devis</button></div>';
     h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(caList)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + '</div></div>' +
       '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + fmt(sumFac(attente)) + '</div><div class="sub">' + attente.length + ' devis envoyé' + (attente.length > 1 ? 's' : '') + '</div></div></div>';
-    h += dashHtml(y, fac, docs) + plafondHtml(caList) + relanceHtml() + backupHtml();
+    h += dashHtml(y, fac, docs) + plafondHtml(caList) + expHtml() + relanceHtml() + backupHtml();
     if (!docs.length || !state.clients.length || !p.siret) {
       var s1 = !!(p.nom && p.siret), s2 = state.clients.length > 0, s3 = docs.length > 0;
       h += '<div class="card"><h2 class="h2">Pour bien démarrer</h2><div class="steps">' +
@@ -787,10 +804,67 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       '<div class="gauge' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
       '<div class="sub">' + (hot ? 'Attention : tu approches du plafond (' + pct + ' %).' : pct + ' % utilisé, encaissements de l\'année.') + '</div></div>';
   }
+  /* ---------- Expiration des devis ---------- */
+  var EXP_JOURS = 7;
+  function devisUntil(d) { return addDays(d.date || todayIso(), parseInt(d.validite, 10) || 30); }
+  function expInfo(d) {
+    if (d.type !== 'devis' || d.statut !== 'Envoyé' || !/^\d{4}-\d{2}-\d{2}$/.test(d.date || '')) return null;
+    var u = devisUntil(d), j = Math.round((new Date(u + 'T12:00:00') - new Date(todayIso() + 'T12:00:00')) / 86400000);
+    return isNaN(j) ? null : { until: u, jours: j };
+  }
+  function expList() {
+    var o = []; state.docs.forEach(function (d) { var e = expInfo(d); if (e && e.jours <= EXP_JOURS) o.push({ d: d, e: e }); });
+    return o.sort(function (a, b) { return a.e.jours - b.e.jours; });
+  }
+  function expText(e) {
+    return e.jours < 0 ? 'Expiré depuis ' + (-e.jours) + ' j' : e.jours === 0 ? 'Expire aujourd\'hui' : e.jours === 1 ? 'Expire demain' : 'Expire dans ' + e.jours + ' j';
+  }
+  function expHtml() {
+    var L = expList(); if (!L.length) return '';
+    return '<div class="card"><h2 class="h2">Devis qui expirent (' + L.length + ')</h2><div class="rlist">' + L.slice(0, 5).map(function (r) {
+      var d = r.d;
+      return '<div class="rrow"><div class="tx"><b>' + esc(nom(d)) + '</b><span class="kicker' + (r.e.jours < 0 ? ' late' : '') + '">' + esc(d.numero) + ' · ' + expText(r.e) + ' (' + esc(frDate(r.e.until)) + ')</span></div>' +
+        '<div class="rbtn"><button class="btn soft small" data-act="doc-prolong" data-id="' + d.id + '" type="button">+ 15 jours</button>' +
+        '<button class="btn soft small" data-act="doc-relance" data-id="' + d.id + '" type="button">Relancer</button></div></div>';
+    }).join('') + '</div></div>';
+  }
+  /* ---------- Export comptable (CSV) ---------- */
+  function csvTxt(v) { v = String(v == null ? '' : v); if (/^[=+\-@\t\r]/.test(v)) v = '\'' + v; return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function csvNum(n) { return (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).replace('.', ','); }
+  function csvBuild(head, rows) { return '﻿' + [head].concat(rows).map(function (r) { return r.map(function (c) { return typeof c === 'number' ? csvNum(c) : csvTxt(c); }).join(';'); }).join('\r\n'); }
+  var CSV_DOC_HEAD = ['Numéro', 'Type', 'Date', 'Client', 'Objet', 'Montant net', 'Déjà facturé', 'Montant à payer', 'Statut', 'Échéance', 'Date de paiement'];
+  function csvDocRow(d) {
+    var t = total(d);
+    return [d.numero || '', docNoun(d), frDate(d.date), nom(d), (d.chantier && d.chantier.objet) || '', t.net, t.ded, t.due, docStatus(d), d.type === 'facture' && !isAvoir(d) ? frDate(d.echeance) : '', frDate(d.paidAt)];
+  }
+  function csvDocs(arr) { return csvBuild(CSV_DOC_HEAD, arr.slice().sort(function (a, b) { return (a.date || '').localeCompare(b.date || ''); }).map(csvDocRow)); }
+  function csvRecettes(y) {
+    var rows = [], tot = 0;
+    state.docs.filter(function (d) {
+      if (d.type !== 'facture') return false;
+      var dt = d.statut === 'Payée' ? (d.paidAt || d.date || '') : isAvoir(d) ? (d.date || '') : '';
+      return dt.slice(0, 4) === y;
+    }).map(function (d) { return { d: d, dt: d.statut === 'Payée' ? (d.paidAt || d.date || '') : d.date }; })
+      .sort(function (a, b) { return a.dt.localeCompare(b.dt); })
+      .forEach(function (x) { var v = total(x.d).due; tot += v; rows.push([frDate(x.dt), x.d.numero || '', nom(x.d), isAvoir(x.d) ? 'Avoir' : 'Prestation de services', v]); });
+    rows.push(['', '', '', 'TOTAL ' + y, r2(tot)]);
+    return csvBuild(['Date d\'encaissement', 'Référence', 'Client', 'Nature', 'Montant'], rows);
+  }
+  function compaHtml() {
+    var ys = {}, cy = todayIso().slice(0, 4); ys[cy] = 1;
+    state.docs.forEach(function (d) { var y = (d.date || '').slice(0, 4); if (/^\d{4}$/.test(y)) ys[y] = 1; });
+    var opts = Object.keys(ys).sort().reverse().map(function (y) { return '<option' + (y === cy ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+    return '<div class="lab">Export pour la comptabilité</div><div class="row2"><label class="f">Année<select id="exp-y">' + opts + '</select></label><span></span></div>' +
+      '<div class="row2"><button class="btn outline small" data-act="exp-recettes" type="button">' + ic('download', 18) + ' Livre des recettes</button>' +
+      '<button class="btn outline small" data-act="exp-docs" type="button">' + ic('download', 18) + ' Tous les documents</button></div>' +
+      '<p class="kicker" style="margin:0">Fichiers CSV, lisibles dans Excel ou à donner à ton comptable.</p>';
+  }
   function relanceList() {
     var now = Date.now(), out = [];
     state.docs.forEach(function (d) {
       var since = d.envoye ? d.envoye.at : (d.createdAt || 0);
+      var ex0 = expInfo(d);
+      if (ex0 && ex0.jours <= EXP_JOURS) return;
       if (d.type === 'devis' && d.statut === 'Envoyé' && since && now - since >= RELANCE_JOURS * 86400000) out.push({ d: d, jours: Math.floor((now - since) / 86400000), kind: 'devis' });
       else if (d.type === 'facture' && docStatus(d) === 'En retard') out.push({ d: d, jours: Math.floor((now - new Date(d.echeance + 'T12:00:00').getTime()) / 86400000), kind: 'facture' });
     });
@@ -840,7 +914,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   function stepHtml(act, done, text) { return '<button type="button" class="step' + (done ? ' done' : '') + '" data-act="' + act + '"><span class="dot">' + (done ? ic('check', 14) : '') + '</span><span class="tx">' + esc(text) + '</span></button>'; }
 
   function docItem(d) {
-    var t = total(d), st = docStatus(d);
+    var t = total(d), st = docStatus(d), ex1 = expInfo(d); if (ex1 && ex1.jours < 0) st = 'Expiré';
     return '<button type="button" class="item" data-act="open-doc" data-id="' + d.id + '"><span class="ico ' + (d.type === 'facture' ? 'fac' : '') + '">' + ic(d.type === 'facture' ? 'receipt' : 'file') + '</span>' +
       '<span class="mid-col"><span class="t">' + esc(nom(d)) + '</span><span class="s">' + esc(d.numero) + ' · ' + esc(frDate(d.date)) + (d.kind === 'acompte' ? ' · Acompte' : d.kind === 'avoir' ? ' · Avoir' : d.deduits && d.deduits.length ? ' · Solde' : '') + '</span></span>' +
       '<span class="r"><span class="amt">' + fmt(t.due) + '</span>' + pill(st) + '</span></button>';
@@ -866,7 +940,8 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   function clientStats(c) {
     var mine = state.docs.filter(function (d) { return d.client && d.client.id === c.id; });
     var paid = mine.filter(function (d) { return d.type === 'facture' && d.statut === 'Payée'; });
-    return { n: mine.length, paid: sumFac(paid), docs: mine };
+    var billed = mine.filter(function (d) { return d.type === 'facture' && d.statut !== 'Annulée'; });
+    return { n: mine.length, paid: sumFac(paid), billed: sumFac(billed), due: sumFac(mine.filter(isDue)), open: mine.filter(function (d) { return d.type === 'devis' && d.statut === 'Envoyé'; }).length, docs: mine };
   }
   function renderClients() {
     $('main').innerHTML = '<div class="stack"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Clients</h1>' +
@@ -947,6 +1022,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
         '<p class="kicker" style="margin:0"><a href="mentions-legales.html" target="_blank" rel="noopener">Mentions légales</a> · <a href="confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a></p>' +
         '<div class="row2"><button class="btn outline small" data-act="set-export" type="button">' + ic('download', 18) + ' Exporter mes données</button>' +
         (state.mode === 'db' ? '<button class="btn outline small" data-act="set-backup" type="button">' + ic('send', 18) + ' Sauvegarde par e-mail</button>' : '') + '</div>' +
+        compaHtml() +
         '<label class="f">Plafond annuel de chiffre d\'affaires (€)<input data-p="plafondCA" inputmode="numeric" placeholder="83600"></label>' +
         '<p class="kicker" style="margin:0">Par défaut 83 600 € (prestations de services, 2026 à 2028). Modifie-le si ton activité est différente.</p>' +
         (state.mode === 'db' ? '<button class="btn danger small" data-act="logout" type="button">Se déconnecter</button>' : '') + '</div>';
@@ -972,14 +1048,22 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   }
   function openClientSheet(id, thenSelect) {
     var c = state.clients.filter(function (x) { return x.id === id; })[0];
-    var h = clientForm(c);
+    var h = '', top = '', hist = '';
     if (c) {
       var s = clientStats(c);
-      h += '<div class="card flat"><div class="kicker">Encaissé : ' + fmt(s.paid) + ' · ' + s.n + ' document' + (s.n > 1 ? 's' : '') + '</div>' +
-        (s.docs.length ? '<div class="stack">' + s.docs.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).slice(0, 5).map(docItem).join('') + '</div>' : '') + '</div>';
-      h += '<button class="btn block" data-act="client-devis" data-id="' + c.id + '" type="button">Créer un devis pour ce client</button>';
+      var tel = String(c.tel || '').replace(/[^0-9+]/g, ''), mail = (c.email || '').trim();
+      top += '<div class="grid2 cstats"><div class="stat"><div class="kicker">Facturé</div><div class="mid">' + fmt(s.billed) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Encaissé</div><div class="mid">' + fmt(s.paid) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Reste à payer</div><div class="mid' + (s.due > 0 ? ' warnc' : '') + '">' + fmt(s.due) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + s.open + '</div></div></div>';
+      if (tel || /^[^\s@]+@[^\s@]+$/.test(mail)) top += '<div class="row2">' + (tel ? '<a class="btn soft small" href="tel:' + tel + '">Appeler</a>' : '<span></span>') + (/^[^\s@]+@[^\s@]+$/.test(mail) ? '<a class="btn soft small" href="mailto:' + esc(mail) + '">Écrire</a>' : '<span></span>') + '</div>';
+      hist += '<div class="card flat"><div class="kicker">Historique · ' + s.n + ' document' + (s.n > 1 ? 's' : '') + '</div>' +
+        (s.docs.length ? '<div class="stack">' + s.docs.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).map(docItem).join('') + '</div>' : '<p class="empty">Aucun document pour ce client.</p>') + '</div>';
+      if (s.docs.length) hist += '<button class="btn outline block" data-act="client-csv" data-id="' + c.id + '" type="button">' + ic('download', 18) + ' Exporter l\'historique (CSV)</button>';
+      hist += '<button class="btn block" data-act="client-devis" data-id="' + c.id + '" type="button">Créer un devis pour ce client</button>';
     }
-    h += '<button class="btn ' + (c ? 'soft' : '') + ' block" data-act="client-save" data-id="' + (c ? c.id : '') + '" data-sel="' + (thenSelect ? '1' : '') + '" type="button">Enregistrer</button>';
+    h = top + clientForm(c) + '<button class="btn ' + (c ? 'soft' : '') + ' block" data-act="client-save" data-id="' + (c ? c.id : '') + '" data-sel="' + (thenSelect ? '1' : '') + '" type="button">Enregistrer</button>';
+    h += hist;
     if (c) h += '<button class="btn danger block" data-act="client-del" data-id="' + c.id + '" type="button">Supprimer ce client</button>';
     openSheet(c ? c.nom : 'Nouveau client', h);
   }
@@ -1596,7 +1680,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
   function refreshAppearance() { var c = $('appearance'); if (c) { c.innerHTML = appearanceInner(); refreshPreviews(); } }
 
   async function saveFile(name, data) {
-    var type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.json$/i.test(name) ? 'application/json' : 'text/plain';
+    var type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.json$/i.test(name) ? 'application/json' : /\.csv$/i.test(name) ? 'text/csv;charset=utf-8' : 'text/plain';
     var blob = new Blob([data], { type: type });
     try {
       var file = new File([blob], name, { type: type });
@@ -1922,6 +2006,16 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
       case 'ph-del': if (ed && ed.doc.photos) { ed.doc.photos.splice(Number(b.getAttribute('data-i')), 1); edPhotos(); } break;
       case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
       case 'set-backup': backupNow(); break;
+      case 'exp-recettes': { var ey = ($('exp-y') && $('exp-y').value) || todayIso().slice(0, 4); saveFile('livre-des-recettes-' + ey + '.csv', csvRecettes(ey)); break; }
+      case 'exp-docs': { var ey2 = ($('exp-y') && $('exp-y').value) || todayIso().slice(0, 4); saveFile('documents-' + ey2 + '.csv', csvDocs(state.docs.filter(function (d) { return (d.date || '').slice(0, 4) === ey2; }))); break; }
+      case 'client-csv': { var cc = state.clients.filter(function (x) { return x.id === id; })[0]; if (cc) saveFile('client-' + (cc.nom || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) + '.csv', csvDocs(clientStats(cc).docs)); break; }
+      case 'doc-prolong': {
+        var dpd = docById(id), dpe = dpd && expInfo(dpd); if (!dpd || !dpe) break;
+        var dpn = addDays(dpe.jours > 0 ? dpe.until : todayIso(), 15);
+        dpd.validite = String(Math.round((new Date(dpn + 'T12:00:00') - new Date(dpd.date + 'T12:00:00')) / 86400000));
+        if (await guard(function () { return repo.put('docs', dpd); })) { toast('Devis valable jusqu\'au ' + frDate(dpn) + '. Renvoie-le au client pour qu\'il ait la nouvelle date.'); renderAccueil(); }
+        break;
+      }
       case 'doc-send': { var dsd = docById(id); if (dsd) openSend(dsd); break; }
       case 'snd-go': sndGo(); break;
       case 'snd-share': sndShare(); break;
