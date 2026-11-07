@@ -586,7 +586,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     state.route = name; render(); window.scrollTo(0, 0);
     try { if (location.hash !== '#' + name) location.hash = name; } catch (e) { /* ignoré */ }
   }
-  window.addEventListener('hashchange', function () { var n = location.hash.slice(1); if (ROUTES.indexOf(n) >= 0 && n !== state.route) { state.route = n; render(); } });
+  window.addEventListener('hashchange', function () { var n = location.hash.slice(1); if (n === 'agenda') { state.cview = 'agenda'; n = 'clients'; if (state.route === 'clients') { render(); return; } } if (ROUTES.indexOf(n) >= 0 && n !== state.route) { state.route = n; render(); } });
 
   /* ---------- Vues ---------- */
   function sanitizeDocs() {
@@ -629,7 +629,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     else if (state.route === 'clients') { if ($('clist')) renderClientList(); else if (state.cview === 'agenda') renderAgenda(); }
     else if (state.route === 'reglages' && $('sform') && !($('sform').contains(document.activeElement))) fillSettings();
   }
-  function start() { applyTheme(); buildDock(); var n = location.hash.slice(1); if (ROUTES.indexOf(n) >= 0) state.route = n; render(); }
+  function start() { applyTheme(); buildDock(); var n = location.hash.slice(1); if (n === 'agenda') { state.cview = 'agenda'; n = 'clients'; } if (ROUTES.indexOf(n) >= 0) state.route = n; render(); }
 
   function renderGate() {
     var g = state.gate || 'login', h;
@@ -949,15 +949,30 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     return '<div class="seg"><button type="button" data-act="cview" data-v="clients" aria-pressed="' + (active === 'clients') + '">Clients</button>' +
       '<button type="button" data-act="cview" data-v="agenda" aria-pressed="' + (active === 'agenda') + '">Agenda</button></div>';
   }
+  function pushCard() {
+    if (!repo.pushStatus) return '';
+    var st = state.push, b = state.pushBusy ? ' disabled' : '', h = '<div class="card flat" id="push-card" style="display:grid;gap:10px"><b>' + ic('cal', 18) + ' Notifications de rendez-vous</b>';
+    if (st === 'on') h += '<span class="muted">Activées sur cet appareil. Tu seras prévenu avant chaque rendez-vous, même application fermée.</span><div class="row2"><button class="btn soft small" data-act="push-test" type="button"' + b + '>Tester</button><button class="btn outline small" data-act="push-off" type="button"' + b + '>Désactiver</button></div>';
+    else if (st === 'denied') h += '<span class="muted">Les notifications sont bloquées. Va dans Réglages de l\'iPhone › Notifications › Chantio pour les autoriser.</span>';
+    else if (st === 'unsupported') h += '<span class="muted">Pour recevoir les rappels, ouvre Chantio depuis son icône sur l\'écran d\'accueil (iPhone iOS 16.4 ou plus).</span>';
+    else if (st === 'off') h += '<span class="muted">Reçois une notification avant chaque rendez-vous, même application fermée.</span><button class="btn small" data-act="push-on" type="button"' + b + '>Activer les notifications</button>';
+    else return '';
+    return h + '</div>';
+  }
+  function pushRefresh() {
+    if (!repo.pushStatus) return;
+    repo.pushStatus().then(function (s) { if (state.push !== s) { state.push = s; if (state.route === 'clients' && state.cview === 'agenda') renderAgenda(); } }).catch(function () { /* ignoré */ });
+  }
   function renderAgenda() {
     var t = todayIso(), all = rdvSorted();
     var up = all.filter(function (r) { return (r.date || '') >= t; }), past = all.filter(function (r) { return (r.date || '') < t; }).reverse();
     var h = '<div class="stack">' + clientsHead('agenda') + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Agenda</h1>' +
-      '<button class="btn small" data-act="new-rdv" type="button">' + ic('plus', 18) + ' Rendez-vous</button></div>';
+      '<button class="btn small" data-act="new-rdv" type="button">' + ic('plus', 18) + ' Rendez-vous</button></div>' + pushCard();
     if (!up.length) h += '<div class="card flat empty">Aucun rendez-vous à venir. Touche « Rendez-vous » pour en ajouter un : tu pourras le mettre dans ton calendrier avec un rappel.</div>';
     var last = ''; up.forEach(function (r) { if (r.date !== last) { last = r.date; h += '<div class="dayh">' + esc(rdvDay(r.date, true)) + '</div>'; } h += rdvItem(r); });
     if (past.length) h += '<div class="dayh">Passés</div>' + past.slice(0, 15).map(rdvItem).join('');
     $('main').innerHTML = h + '</div>';
+    pushRefresh();
   }
   function rdvForm(r) {
     var cs = state.clients.slice().sort(function (a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); });
@@ -2196,6 +2211,47 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     } catch (e) { return { error: 'Impossible de joindre le service d\'envoi.' }; }
   };
 
+  var VAPID_PUBLIC = 'BPeFQ4wlNtQ0Y9L-uEvAEQxx02EsIsfXcgRPG9oC9Wz4g7uDKGd2FAvbZB5frgp06JL0WDhlBvDXwYISO3ATuKU';
+  function vapidKey() { var s = VAPID_PUBLIC.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; var b = atob(s), o = new Uint8Array(b.length); for (var i = 0; i < b.length; i++) o[i] = b.charCodeAt(i); return o; }
+  function pushOk() { return !!(sb && state.mode === 'db' && state.user && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window); }
+  async function pushSub() { var reg = await navigator.serviceWorker.ready; return { reg: reg, sub: await reg.pushManager.getSubscription() }; }
+  repo.pushStatus = async function () {
+    if (state.mode !== 'db') return '';
+    if (!pushOk()) return 'unsupported';
+    if (Notification.permission === 'denied') return 'denied';
+    try { var x = await pushSub(); return x.sub && Notification.permission === 'granted' ? 'on' : 'off'; } catch (e) { return 'unsupported'; }
+  };
+  repo.pushOn = async function () {
+    if (!pushOk()) return { msg: 'Ouvre Chantio depuis son icône sur l\'écran d\'accueil.' };
+    try {
+      var perm = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+      if (perm !== 'granted') return { msg: 'Notifications refusées. Tu peux les autoriser dans les Réglages de l\'iPhone.' };
+      var x = await pushSub(), sub = x.sub || await x.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidKey() });
+      var j = sub.toJSON(), k = j.keys || {};
+      if (!j.endpoint || !k.p256dh || !k.auth) return { msg: 'Abonnement impossible sur cet appareil.' };
+      var r = await sb.from('push_subs').upsert({ user_id: state.user.id, endpoint: j.endpoint, p256dh: k.p256dh, auth: k.auth }, { onConflict: 'user_id,endpoint' });
+      if (r.error) return { msg: 'Enregistrement impossible. Vérifie ta connexion.' };
+      return { ok: true, msg: 'Notifications activées. Touche « Tester » pour vérifier.' };
+    } catch (e) { return { msg: 'Activation impossible : ' + String(e && e.message || e).slice(0, 80) }; }
+  };
+  repo.pushOff = async function () {
+    try {
+      var x = await pushSub();
+      if (x.sub) { var ep = x.sub.endpoint; await x.sub.unsubscribe(); if (sb && state.user) await sb.from('push_subs').delete().eq('user_id', state.user.id).eq('endpoint', ep); }
+      return { ok: true, msg: 'Notifications désactivées.' };
+    } catch (e) { return { msg: 'Désactivation impossible.' }; }
+  };
+  repo.pushTest = async function () {
+    if (!navigator.onLine) return { msg: 'Pas de réseau.' };
+    try {
+      var r = await sb.functions.invoke('rdv-rappels', { body: { action: 'test' } });
+      if (r.error) return { msg: 'Le test a échoué. Réessaie dans un instant.' };
+      if (r.data && r.data.ok) return { ok: true, msg: 'Notification envoyée : elle arrive dans quelques secondes.' };
+      if (r.data && r.data.subs === 0) return { msg: 'Cet appareil n\'est pas enregistré. Désactive puis réactive les notifications.' };
+      return { msg: 'Le service de notifications de l\'appareil a refusé l\'envoi. Désactive puis réactive.' };
+    } catch (e) { return { msg: 'Impossible de joindre le serveur.' }; }
+  };
+
   /* ---------- Actions ---------- */
   function docById(id) { return state.docs.filter(function (x) { return x.id === id; })[0]; }
   function newClientFlow(thenSelect) { openClientSheet('', thenSelect); }
@@ -2220,6 +2276,14 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
       case 'set-backup': backupNow(); break;
       case 'cview': state.cview = b.getAttribute('data-v') === 'agenda' ? 'agenda' : 'clients'; renderClients(); break;
+      case 'push-on': case 'push-off': case 'push-test': {
+        if (state.pushBusy || !repo.pushStatus) break;
+        state.pushBusy = true; renderAgenda();
+        var pr = act === 'push-on' ? await repo.pushOn() : act === 'push-off' ? await repo.pushOff() : await repo.pushTest();
+        state.pushBusy = false; state.push = await repo.pushStatus(); renderAgenda();
+        toast(pr && pr.msg ? pr.msg : (pr && pr.ok ? 'C\'est fait.' : 'Échec.'));
+        break;
+      }
       case 'open-agenda': state.cview = 'agenda'; go('clients'); break;
       case 'new-rdv': closeSheet(); openRdv('', id); break;
       case 'open-rdv': closeSheet(); openRdv(id); break;

@@ -1,6 +1,6 @@
 // Service worker de Chantio : ouverture rapide et fonctionnement de base hors connexion.
 // Les données de l'utilisateur ne sont jamais mises en cache ici (elles passent par Supabase).
-const CACHE = 'chantio-v16';
+const CACHE = 'chantio-v17';
 const SHELL = ['./', 'index.html', 'config.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png', 'mentions-legales.html', 'confidentialite.html', 'legal.js'];
 
 self.addEventListener('install', (e) => {
@@ -23,4 +23,21 @@ self.addEventListener('fetch', (e) => {
       return hit || net;
     }));
   }
+});
+
+// Notifications push (rappels de rendez-vous envoyés par le serveur)
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (x) { d = { title: 'Chantio', body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Chantio', {
+    body: d.body || '', tag: d.tag || 'chantio', icon: 'icon-192.png', badge: 'icon-192.png', data: { url: d.url || './#agenda' }
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const target = new URL((e.notification.data && e.notification.data.url) || './#agenda', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+    for (const c of cs) { if (c.url.startsWith(self.registration.scope) && 'focus' in c) { if ('navigate' in c) c.navigate(target).catch(() => {}); return c.focus(); } }
+    return self.clients.openWindow(target);
+  }));
 });
