@@ -168,6 +168,7 @@ textarea.des { min-height: 64px; max-height: 60vh; line-height: 1.45; resize: ve
 .kicker.late { color: var(--bad); }
 .rbtn { display: grid; gap: 6px; min-width: 104px; }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.dayh { font-weight: 700; font-size: 13px; line-height: 1.2; color: var(--muted); text-transform: capitalize; margin: 6px 2px 0; }
 .gauge { height: 8px; border-radius: 99px; background: var(--sky); overflow: hidden; margin: 8px 0 4px; }
 .gauge i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
 .gauge.hot i { background: var(--bad); }
@@ -274,6 +275,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     users: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.4 2.7-6 6-6s6 2.6 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.9.2 5 2.4 5 5.8"/>',
     gear: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M18.4 5.6l-1.8 1.8M7.4 16.6l-1.8 1.8"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    cal: '<rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/>',
     send: '<path d="M21 3L10 14"/><path d="M21 3l-7 18-4-8-8-4z"/>',
     spark: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
     back: '<path d="M15 5l-7 7 7 7"/>',
@@ -306,7 +308,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     };
   }
 
-  var state = { route: 'accueil', mode: 'pending', profile: defaultProfile(), clients: [], docs: [], filter: 'tous', q: '', cq: '', readOnly: false, logo: null, logoImg: null };
+  var state = { route: 'accueil', mode: 'pending', profile: defaultProfile(), clients: [], docs: [], rdvs: [], cview: 'clients', filter: 'tous', q: '', cq: '', readOnly: false, logo: null, logoImg: null };
   var ed = null, ac = null, catTab = 'mes', catQ = '';
 
   function todayIso() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -350,26 +352,27 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
   /* ---------- Stockage ---------- */
   function lsGet() { try { var v = localStorage.getItem('devisfacile'); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
-  function lsSave() { try { localStorage.setItem('devisfacile', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, logo: state.logo })); } catch (e) { /* ignoré */ } }
+  function lsSave() { try { localStorage.setItem('devisfacile', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs, logo: state.logo })); } catch (e) { /* ignoré */ } }
   var CFG = window.CHANTIO_CONFIG || {};
   var sb = null, authBusy = false;
-  var KIND = { clients: 'client', docs: 'doc' };
+  var KIND = { clients: 'client', docs: 'doc', rdvs: 'rdv' };
   var repo = {};
   repo.configured = function () { return !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY); };
 
   function resetState() {
-    state.profile = defaultProfile(); state.clients = []; state.docs = []; state.logo = null; state.logoImg = null;
+    state.profile = defaultProfile(); state.clients = []; state.docs = []; state.rdvs = []; state.logo = null; state.logoImg = null;
     state.user = null; state.route = 'accueil'; state.setTab = 'entreprise';
   }
   function applyRows(rows) {
-    var clients = [], docs = [], profile = null, logo = null;
+    var clients = [], docs = [], rdvs = [], profile = null, logo = null;
     rows.forEach(function (x) {
       if (x.kind === 'client') clients.push(x.data);
       else if (x.kind === 'doc') docs.push(x.data);
+      else if (x.kind === 'rdv') rdvs.push(x.data);
       else if (x.kind === 'profile' && x.id === 'main') profile = x.data;
       else if (x.kind === 'logo' && x.id === 'main') logo = x.data;
     });
-    state.clients = clients; state.docs = docs;
+    state.clients = clients; state.docs = docs; state.rdvs = rdvs;
     state.profile = Object.assign(defaultProfile(), profile || {});
     state.logo = logo && logo.data ? { data: logo.data, w: logo.w, h: logo.h } : null;
   }
@@ -411,7 +414,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       state.mode = 'gate'; state.gate = 'loaderr'; state.gateMsg = frErr(r.error); start(); return;
     }
     applyRows(r.data || []);
-    if (outbox.length) { outbox.forEach(function (o) { var k = o.kind === 'client' ? 'clients' : o.kind === 'doc' ? 'docs' : null; if (!k) return; state[k] = state[k].filter(function (x) { return x.id !== o.id; }); if (o.op === 'upsert') state[k].push(o.data); }); }
+    if (outbox.length) { outbox.forEach(function (o) { var k = o.kind === 'client' ? 'clients' : o.kind === 'doc' ? 'docs' : o.kind === 'rdv' ? 'rdvs' : null; if (!k) return; state[k] = state[k].filter(function (x) { return x.id !== o.id; }); if (o.op === 'upsert') state[k].push(o.data); }); }
     try { localStorage.setItem('chantio_lastuser', JSON.stringify({ id: user.id, email: user.email })); } catch (e) { /* ignoré */ }
     persistCache();
     state.gateMsg = ''; state.gateInfo = '';
@@ -443,7 +446,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
   repo.local = function () {
     var d = lsGet(); state.mode = 'local';
-    if (d) { state.profile = Object.assign(defaultProfile(), d.profile || {}); state.clients = d.clients || []; state.docs = d.docs || []; state.logo = d.logo || null; }
+    if (d) { state.profile = Object.assign(defaultProfile(), d.profile || {}); state.clients = d.clients || []; state.docs = d.docs || []; state.rdvs = d.rdvs || []; state.logo = d.logo || null; }
     loadLogo(); start();
   };
   async function guard(fn) {
@@ -470,6 +473,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     var rows = [];
     state.clients.forEach(function (c) { rows.push({ kind: 'client', id: c.id, data: c }); });
     state.docs.forEach(function (d) { rows.push({ kind: 'doc', id: d.id, data: d }); });
+    state.rdvs.forEach(function (x) { rows.push({ kind: 'rdv', id: x.id, data: x }); });
     rows.push({ kind: 'profile', id: 'main', data: state.profile });
     if (state.logo) rows.push({ kind: 'logo', id: 'main', data: state.logo });
     return rows;
@@ -593,6 +597,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       if (!d.chantier || typeof d.chantier !== 'object') d.chantier = { adresse: '', objet: '' };
       if (!Array.isArray(d.lignes)) d.lignes = [];
     });
+    if (!Array.isArray(state.rdvs)) state.rdvs = [];
+    state.rdvs = state.rdvs.filter(function (r) { return r && typeof r === 'object' && r.id; });
     if (!Array.isArray(state.clients)) state.clients = [];
     state.clients = state.clients.filter(function (c) { return c && typeof c === 'object'; });
   }
@@ -620,7 +626,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     applyTheme();
     if (state.route === 'accueil') renderAccueil();
     else if (state.route === 'documents' && $('list')) renderDocList();
-    else if (state.route === 'clients' && $('clist')) renderClientList();
+    else if (state.route === 'clients') { if ($('clist')) renderClientList(); else if (state.cview === 'agenda') renderAgenda(); }
     else if (state.route === 'reglages' && $('sform') && !($('sform').contains(document.activeElement))) fillSettings();
   }
   function start() { applyTheme(); buildDock(); var n = location.hash.slice(1); if (ROUTES.indexOf(n) >= 0) state.route = n; render(); }
@@ -692,7 +698,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<button class="btn" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 20) + ' Créer un devis</button></div>';
     h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(caList)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + '</div></div>' +
       '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + fmt(sumFac(attente)) + '</div><div class="sub">' + attente.length + ' devis envoyé' + (attente.length > 1 ? 's' : '') + '</div></div></div>';
-    h += dashHtml(y, fac, docs) + plafondHtml(caList) + expHtml() + relanceHtml() + backupHtml();
+    h += rdvHome() + dashHtml(y, fac, docs) + plafondHtml(caList) + expHtml() + relanceHtml() + backupHtml();
     if (!docs.length || !state.clients.length || !p.siret) {
       var s1 = !!(p.nom && p.siret), s2 = state.clients.length > 0, s3 = docs.length > 0;
       h += '<div class="card"><h2 class="h2">Pour bien démarrer</h2><div class="steps">' +
@@ -804,6 +810,207 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div class="gauge' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
       '<div class="sub">' + (hot ? 'Attention : tu approches du plafond (' + pct + ' %).' : pct + ' % utilisé, encaissements de l\'année.') + '</div></div>';
   }
+  /* ---------- Modèles de devis ---------- */
+  var MODELES = [
+    { nom: "Réfection de toiture en ardoises naturelles", info: "exemple : 100 m²", objet: "Réfection complète de la couverture en ardoises naturelles",
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 8 à 10 jours ouvrés, selon la météo.",
+      lignes: [
+        ["Installation de chantier et mise en sécurité : balisage et protection des abords, mise en place des protections collectives, protection des terrasses, plantations et ouvrants situés sous la zone de travaux.", "1", "forfait", "350"],
+        ["Fourniture, montage, location et démontage d'un échafaudage de pied conforme à la réglementation, avec garde-corps, filets de sécurité et ancrages. Location comprise pour toute la durée du chantier.", "1", "forfait", "1200"],
+        ["Dépose complète de l'ancienne couverture : retrait des ardoises, crochets, liteaux et accessoires, descente et tri des matériaux. Mise à nu de la charpente et contrôle visuel de son état.", "100", "m²", "25"],
+        ["Fourniture et pose d'un écran de sous-toiture HPV respirant, fixé sur les chevrons avec contre-liteaux, pour garantir l'étanchéité à l'eau et la ventilation de la couverture.", "100", "m²", "14"],
+        ["Fourniture et pose de liteaux en sapin traité, section et entraxe adaptés au pureau de l'ardoise, fixés par pointes inox.", "100", "m²", "18"],
+        ["Fourniture et pose d'ardoises naturelles (origine et format au choix du client), fixées au crochet inox, avec pureau et recouvrement conformes aux règles de l'art (DTU 40.11). Calepinage soigné, coupes, rives et égouts alignés.", "100", "m²", "95"],
+        ["Réalisation du faîtage et des arêtiers : fourniture et pose de faîtières ou d'ardoises en bardeau, fixations inox, finitions soignées et étanchéité assurée.", "12", "ml", "55"],
+        ["Fourniture et pose de noues, solins et bandes de rive en zinc naturel, façonnés sur mesure, avec raccordements étanches aux murs, souches de cheminée et fenêtres de toit.", "15", "ml", "70"],
+        ["Évacuation et mise en décharge agréée des gravats et déchets de couverture (benne comprise). Nettoyage complet du chantier en fin de travaux : ramassage des chutes, pointes et débris.", "1", "forfait", "450"]]},
+    { nom: "Réfection de toiture en tuiles", info: "exemple : 100 m²", objet: "Réfection complète de la couverture en tuiles",
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 6 à 8 jours ouvrés, selon la météo.",
+      lignes: [
+        ["Installation de chantier et mise en sécurité : balisage et protection des abords, mise en place des protections collectives, protection des terrasses, plantations et ouvrants situés sous la zone de travaux.", "1", "forfait", "350"],
+        ["Fourniture, montage, location et démontage d'un échafaudage de pied conforme à la réglementation, avec garde-corps, filets de sécurité et ancrages. Location comprise pour toute la durée du chantier.", "1", "forfait", "1200"],
+        ["Dépose complète de l'ancienne couverture : retrait des tuiles, faîtières et liteaux, descente et tri des matériaux. Mise à nu de la charpente et contrôle visuel de son état.", "100", "m²", "20"],
+        ["Fourniture et pose d'un écran de sous-toiture HPV respirant, fixé sur les chevrons avec contre-liteaux, pour garantir l'étanchéité et la ventilation de la toiture.", "100", "m²", "14"],
+        ["Fourniture et pose de liteaux en sapin traité, entraxe adapté au modèle de tuile retenu, fixés par pointes ou vis.", "100", "m²", "16"],
+        ["Fourniture et pose de tuiles (terre cuite ou béton, modèle et teinte au choix du client), avec fixation par clous ou crochets selon la pente, conformément aux règles de l'art. Pose de chatières de ventilation incluses.", "100", "m²", "65"],
+        ["Fourniture et pose du faîtage et des arêtiers : faîtières scellées au mortier ou posées à sec avec closoir ventilé, finitions soignées.", "12", "ml", "45"],
+        ["Réalisation des solins, noues et rives : fourniture et pose en zinc ou au mortier selon les supports, raccordements étanches aux murs et aux souches de cheminée.", "15", "ml", "55"],
+        ["Évacuation et mise en décharge agréée des gravats et déchets de couverture (benne comprise). Nettoyage complet du chantier en fin de travaux.", "1", "forfait", "400"]]},
+    { nom: "Démoussage et traitement hydrofuge de toiture", info: "exemple : 100 m²", objet: "Nettoyage, démoussage et traitement hydrofuge de la toiture",
+      delai: "Intervention sous 2 à 3 semaines après acceptation du devis. Durée estimée : 1 à 2 jours, par temps sec.",
+      lignes: [
+        ["Protection des abords du chantier : bâchage des terrasses, plantations, menuiseries et véhicules situés à proximité, afin d'éviter toute projection.", "1", "forfait", "120"],
+        ["Démoussage et nettoyage de la toiture : brossage manuel et nettoyage haute pression à pression adaptée au matériau, élimination des mousses, lichens et salissures, sans abîmer la couverture.", "100", "m²", "12"],
+        ["Remplacement des tuiles ou ardoises cassées, fissurées ou déplacées, avec fourniture des éléments (selon quantité constatée sur place).", "10", "u", "8"],
+        ["Application d'un traitement fongicide et algicide curatif sur l'ensemble de la couverture, pour détruire les micro-organismes et ralentir la repousse.", "100", "m²", "6"],
+        ["Application d'un traitement hydrofuge incolore en deux passes, protégeant la couverture contre l'humidité, la mousse et le gel.", "100", "m²", "10"],
+        ["Nettoyage des gouttières et des abords en fin d'intervention, évacuation des résidus.", "1", "forfait", "80"]]},
+    { nom: "Zinguerie : gouttières et descentes d'eaux pluviales", info: "exemple : 25 ml", objet: "Remplacement des gouttières et des descentes d'eaux pluviales",
+      delai: "Début des travaux sous 2 à 3 semaines après acceptation du devis. Durée estimée : 1 à 2 jours.",
+      lignes: [
+        ["Dépose soignée des gouttières, descentes et fixations existantes, tri et évacuation des déchets.", "25", "ml", "10"],
+        ["Fourniture et pose de gouttières pendantes en zinc naturel, avec crochets de fixation, joints soudés ou étanches, pente régulière pour un écoulement optimal des eaux.", "25", "ml", "55"],
+        ["Fourniture et pose des accessoires : naissances, fonds de gouttière, angles rentrants et sortants, boîtes à eau.", "1", "forfait", "180"],
+        ["Fourniture et pose de descentes d'eaux pluviales en zinc, avec colliers de fixation et raccordement au réseau existant ou au dauphin.", "12", "ml", "50"],
+        ["Location de nacelle élévatrice pour travailler en sécurité en hauteur.", "1", "jour", "220"],
+        ["Évacuation et mise en décharge des anciens éléments, nettoyage du chantier.", "1", "forfait", "90"]]},
+    { nom: "Ravalement de façade en enduit", info: "exemple : 80 m²", objet: "Ravalement complet de la façade : réparation et enduit de finition",
+      delai: "Début des travaux sous 3 à 4 semaines après acceptation du devis. Durée estimée : 8 à 10 jours ouvrés, selon la météo.",
+      lignes: [
+        ["Protection du chantier : bâchage des sols, menuiseries, descentes, plantations et éléments à préserver, ainsi que des ouvrants situés à proximité.", "1", "forfait", "200"],
+        ["Fourniture, montage, location et démontage d'un échafaudage de pied conforme à la réglementation, avec garde-corps, filets et ancrages, pour toute la durée des travaux.", "1", "forfait", "950"],
+        ["Nettoyage haute pression de la façade : élimination des mousses, algues, salissures et parties non adhérentes. Purge des enduits dégradés ou décollés jusqu'au support sain.", "80", "m²", "12"],
+        ["Reprise des fissures et fissures traversantes : ouverture, traitement, remplissage au mortier de réparation et mise en place d'armature si nécessaire.", "20", "ml", "25"],
+        ["Application d'un primaire d'accrochage adapté au support, afin d'assurer l'adhérence et l'uniformité de l'enduit.", "80", "m²", "5"],
+        ["Fourniture et application d'un enduit monocouche, finition gratté fin (teinte au choix du client dans la gamme du fabricant), en une passe régulière avec joints de fractionnement.", "80", "m²", "55"],
+        ["Pose de profils d'angle et d'arrêts d'enduit, finitions autour des menuiseries et du soubassement.", "1", "forfait", "250"],
+        ["Dépose des protections, nettoyage complet du chantier et évacuation des déchets.", "1", "forfait", "250"]]},
+    { nom: "Peinture de façade", info: "exemple : 80 m²", objet: "Nettoyage et mise en peinture de la façade",
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 5 à 7 jours ouvrés, par temps sec.",
+      lignes: [
+        ["Protection du chantier : bâchage des sols, menuiseries, plantations et éléments à préserver.", "1", "forfait", "150"],
+        ["Fourniture, montage, location et démontage d'un échafaudage ou location de nacelle, selon la hauteur de la façade, avec sécurité réglementaire.", "1", "forfait", "800"],
+        ["Nettoyage haute pression de la façade et traitement anti-mousse et fongicide du support, avec temps de séchage avant mise en peinture.", "80", "m²", "14"],
+        ["Préparation du support : rebouchage des petits défauts, ponçage et application d'une sous-couche d'impression adaptée.", "80", "m²", "8"],
+        ["Fourniture et application de deux couches de peinture de façade (pliolite ou siloxane selon le support), teinte au choix du client, finition régulière et uniforme.", "80", "m²", "28"],
+        ["Peinture des sous-faces, débords de toit et rives de toiture, deux couches avec sous-couche d'impression.", "25", "ml", "18"],
+        ["Dépose des protections, nettoyage complet du chantier.", "1", "forfait", "100"]]},
+    { nom: "Pose d'une fenêtre de toit", info: "exemple : 1 fenêtre", objet: "Fourniture et pose d'une fenêtre de toit",
+      delai: "Intervention sous 3 à 4 semaines après acceptation du devis. Durée estimée : 1 journée.",
+      lignes: [
+        ["Protection de l'intérieur et de la toiture : bâchage temporaire pour garantir l'étanchéité pendant l'intervention, protection des sols et du mobilier.", "1", "forfait", "100"],
+        ["Dépose des éléments de couverture autour de l'emplacement, découpe de l'ouverture dans la toiture et création de la trémie avec renfort de charpente (chevêtre) si nécessaire.", "1", "forfait", "350"],
+        ["Fourniture et pose d'une fenêtre de toit (dimension et modèle au choix du client) avec fixation sur la charpente et réglage de l'ouvrant.", "1", "u", "700"],
+        ["Fourniture et pose du raccord d'étanchéité adapté à la couverture (tuiles ou ardoises) : collerette, solins et finitions pour une étanchéité parfaite.", "1", "u", "250"],
+        ["Évacuation des déchets, nettoyage du chantier et vérification finale de l'étanchéité.", "1", "forfait", "80"]]},
+    { nom: "Réparation de fuite en toiture", info: "intervention rapide", objet: "Recherche de fuite et réparation de toiture",
+      delai: "Intervention sous 48 h à 1 semaine selon l'urgence. Durée estimée : 1/2 journée à 1 journée.",
+      lignes: [
+        ["Déplacement, installation et mise en sécurité sur la toiture (harnais, échelles ou nacelle selon accès).", "1", "forfait", "60"],
+        ["Recherche de l'origine de la fuite : inspection de la couverture, des solins, noues, cheminées et raccords, avec photos transmises au client avant réparation.", "1", "forfait", "180"],
+        ["Remplacement des tuiles ou ardoises cassées, fissurées ou déplacées, avec fourniture des éléments.", "10", "u", "8"],
+        ["Reprise d'étanchéité sur solins, noues ou raccords défectueux : fourniture et pose de zinc ou bande d'étanchéité adaptée, fixations et finitions.", "5", "ml", "45"],
+        ["Contrôle final de l'étanchéité et nettoyage de l'intervention, évacuation des déchets.", "1", "forfait", "50"]]}
+  ];
+  function modeleLignes(m) { return (m.lignes || []).map(function (l) { return { id: rid(), des: l[0], qte: l[1], unite: l[2], pu: l[3] }; }); }
+  function modeleTotal(m) { var t = 0; (m.lignes || []).forEach(function (l) { t += num(l[1]) * num(l[3]); }); return t; }
+  function modeleItemHtml(m, key, own) {
+    var n = (m.lignes || []).length;
+    return '<div style="display:flex;gap:8px;align-items:stretch"><button type="button" class="item" style="box-shadow:none;background:var(--bg)" data-act="model-use" data-k="' + key + '"><span class="mid-col"><span class="t" style="white-space:normal">' + esc(m.nom) + '</span>' +
+      '<span class="s">' + n + ' ligne' + (n > 1 ? 's' : '') + ' · ≈ ' + fmt(modeleTotal(m)) + (m.info ? ' · ' + esc(m.info) : '') + '</span></span></button>' +
+      (own ? '<button class="icon-btn plain" data-act="model-del" data-id="' + esc(m.id) + '" type="button" aria-label="Supprimer ce modèle">' + ic('x', 18) + '</button>' : '') + '</div>';
+  }
+  function openModeles() {
+    var mine = state.profile.modeles || [], h = '';
+    if (mine.length) h += '<div class="kicker">Mes modèles</div><div class="stack">' + mine.map(function (m) { return modeleItemHtml(m, 'm-' + m.id, true); }).join('') + '</div>';
+    h += '<div class="kicker">Modèles prêts à l\'emploi</div><div class="stack">' + MODELES.map(function (m, i) { return modeleItemHtml(m, 'p-' + i, false); }).join('') + '</div>' +
+      '<p class="kicker">Tout reste modifiable ensuite : textes, quantités et prix. Les prix sont indicatifs, ajuste-les. Pour garder ta propre version, ouvre un devis et touche « Enregistrer comme modèle ».</p>';
+    openSheet('Devis à partir d\'un modèle', h);
+  }
+  function startModele(m) {
+    var d = newDoc('devis'); d.chantier.objet = m.objet || m.nom || ''; d.delai = m.delai || ''; d.notes = m.notes || ''; d.lignes = modeleLignes(m);
+    closeSheet(); openEditor(d, true); toast('Modèle chargé. Ajuste les quantités et les prix.');
+  }
+  /* ---------- Rendez-vous / agenda ---------- */
+  var RDV_OBJETS = ['Visite pour devis', 'Début de chantier', 'Suivi de chantier', 'Réception des travaux', 'Autre'];
+  var RDV_DUREES = [['30', '30 min'], ['60', '1 h'], ['90', '1 h 30'], ['120', '2 h'], ['240', 'Demi-journée'], ['480', 'Journée']];
+  var RDV_RAPPELS = [['0', 'À l\'heure du rendez-vous'], ['15', '15 min avant'], ['30', '30 min avant'], ['60', '1 h avant'], ['120', '2 h avant'], ['1440', '1 jour avant']];
+  function rdvAt(r) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || '') || !/^\d{2}:\d{2}$/.test(r.heure || '')) return null;
+    var d = new Date(r.date + 'T' + r.heure + ':00'); return isNaN(d.getTime()) ? null : d;
+  }
+  function rdvSorted() { return state.rdvs.slice().sort(function (a, b) { return ((a.date || '') + (a.heure || '')).localeCompare((b.date || '') + (b.heure || '')); }); }
+  function rdvDay(date, long) {
+    var t = todayIso(); if (date === t) return 'Aujourd\'hui'; if (date === addDays(t, 1)) return 'Demain';
+    var d = new Date(date + 'T12:00:00'); return isNaN(d.getTime()) ? 'Date à préciser' : d.toLocaleDateString('fr-FR', { weekday: long ? 'long' : 'short', day: 'numeric', month: 'long' });
+  }
+  function rdvName(r) { var c = state.clients.filter(function (x) { return x.id === r.clientId; })[0]; return (c && c.nom) || r.clientNom || 'Sans nom'; }
+  function rdvIn(r) {
+    var a = rdvAt(r); if (!a || r.statut === 'fait') return '';
+    var m = Math.round((a.getTime() - Date.now()) / 60000);
+    if (m < -60 || m > 240) return '';
+    if (m <= 0) return 'En cours';
+    return 'Dans ' + (m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + String(m % 60).padStart(2, '0') : ''));
+  }
+  function rdvItem(r) {
+    var soon = rdvIn(r), sub = [r.objet, r.adresse].filter(Boolean).join(' · ');
+    return '<button type="button" class="item" data-act="open-rdv" data-id="' + esc(r.id) + '"><span class="ico">' + ic('cal', 20) + '</span>' +
+      '<span class="mid-col"><span class="t">' + esc(r.heure || '--:--') + ' · ' + esc(rdvName(r)) + '</span><span class="s">' + esc(sub || 'Rendez-vous') + '</span></span>' +
+      '<span class="r">' + (r.statut === 'fait' ? '<span class="pill good">Fait</span>' : soon ? '<span class="pill warn">' + esc(soon) + '</span>' : '') + '</span></button>';
+  }
+  function rdvHome() {
+    var t = todayIso(), lim = addDays(t, 14), L = rdvSorted().filter(function (r) { return r.date >= t && r.date <= lim && r.statut !== 'fait'; });
+    if (!L.length) return '';
+    var h = '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h2 class="h2" style="margin:0">Prochains rendez-vous</h2><button class="btn soft small" data-act="open-agenda" type="button">Agenda</button></div><div class="stack" style="margin-top:10px">';
+    var last = ''; L.slice(0, 3).forEach(function (r) { if (r.date !== last) { last = r.date; h += '<div class="dayh">' + esc(rdvDay(r.date)) + '</div>'; } h += rdvItem(r); });
+    return h + '</div></div>';
+  }
+  function clientsHead(active) {
+    return '<div class="seg"><button type="button" data-act="cview" data-v="clients" aria-pressed="' + (active === 'clients') + '">Clients</button>' +
+      '<button type="button" data-act="cview" data-v="agenda" aria-pressed="' + (active === 'agenda') + '">Agenda</button></div>';
+  }
+  function renderAgenda() {
+    var t = todayIso(), all = rdvSorted();
+    var up = all.filter(function (r) { return (r.date || '') >= t; }), past = all.filter(function (r) { return (r.date || '') < t; }).reverse();
+    var h = '<div class="stack">' + clientsHead('agenda') + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Agenda</h1>' +
+      '<button class="btn small" data-act="new-rdv" type="button">' + ic('plus', 18) + ' Rendez-vous</button></div>';
+    if (!up.length) h += '<div class="card flat empty">Aucun rendez-vous à venir. Touche « Rendez-vous » pour en ajouter un : tu pourras le mettre dans ton calendrier avec un rappel.</div>';
+    var last = ''; up.forEach(function (r) { if (r.date !== last) { last = r.date; h += '<div class="dayh">' + esc(rdvDay(r.date, true)) + '</div>'; } h += rdvItem(r); });
+    if (past.length) h += '<div class="dayh">Passés</div>' + past.slice(0, 15).map(rdvItem).join('');
+    $('main').innerHTML = h + '</div>';
+  }
+  function rdvForm(r) {
+    var cs = state.clients.slice().sort(function (a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); });
+    var opt = function (arr, v) { return arr.map(function (o) { var val = Array.isArray(o) ? o[0] : o, lab = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(val) + '"' + (String(val) === String(v) ? ' selected' : '') + '>' + esc(lab) + '</option>'; }).join(''); };
+    return '<label class="f">Client<select id="rdv-client"><option value="">Choisir un client…</option>' + cs.map(function (c) { return '<option value="' + esc(c.id) + '"' + (c.id === r.clientId ? ' selected' : '') + '>' + esc(c.nom) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="f">Ou nom du contact (sans fiche)<input id="rdv-nom" value="' + esc(r.clientId ? '' : r.clientNom) + '" autocomplete="off" placeholder="Ex. M. Le Gall"></label>' +
+      '<div class="row2"><label class="f">Date<input id="rdv-date" type="date" value="' + esc(r.date) + '"></label><label class="f">Heure<input id="rdv-heure" type="time" value="' + esc(r.heure) + '"></label></div>' +
+      '<div class="row2"><label class="f">Durée<select id="rdv-duree">' + opt(RDV_DUREES, r.duree) + '</select></label><label class="f">Motif<select id="rdv-objet">' + opt(RDV_OBJETS, r.objet) + '</select></label></div>' +
+      '<label class="f">Adresse du rendez-vous<input id="rdv-adresse" value="' + esc(r.adresse) + '" autocomplete="off"></label>' +
+      '<label class="f">Notes<textarea id="rdv-notes" rows="2">' + esc(r.notes) + '</textarea></label>' +
+      '<label class="f">Rappel (notification)<select id="rdv-rappel">' + opt(RDV_RAPPELS, r.rappel) + '</select></label>';
+  }
+  function openRdv(id, clientId) {
+    var r = id ? state.rdvs.filter(function (x) { return x.id === id; })[0] : null, isNew = !r;
+    if (isNew) {
+      var c0 = state.clients.filter(function (x) { return x.id === clientId; })[0];
+      r = { id: rid(), clientId: c0 ? c0.id : '', clientNom: c0 ? c0.nom : '', date: addDays(todayIso(), 1), heure: '09:00', duree: '60', objet: 'Visite pour devis', adresse: c0 ? (c0.adresse || '') : '', notes: '', rappel: '60', statut: 'prevu', createdAt: Date.now() };
+    }
+    var h = (isNew ? '' : '<button class="btn block" data-act="rdv-ics" data-id="' + esc(r.id) + '" type="button">' + ic('cal', 18) + ' Ajouter à mon calendrier (avec rappel)</button>') + rdvForm(r) + '<button class="btn ' + (isNew ? '' : 'soft ') + 'block" data-act="rdv-save" data-id="' + esc(r.id) + '" data-new="' + (isNew ? '1' : '') + '" type="button">' + (isNew ? 'Enregistrer le rendez-vous' : 'Enregistrer') + '</button>';
+    if (!isNew) {
+      var c = state.clients.filter(function (x) { return x.id === r.clientId; })[0], tel = String((c && c.tel) || '').replace(/[^0-9+]/g, '');
+      h += '<div class="row2">' + (tel ? '<a class="btn outline small" href="tel:' + tel + '">Appeler</a>' : '<span></span>') +
+        (r.adresse ? '<a class="btn outline small" target="_blank" rel="noopener" href="https://maps.apple.com/?q=' + encodeURIComponent(r.adresse) + '">Itinéraire</a>' : '<span></span>') + '</div>';
+      if (tel) h += '<a class="btn outline block" href="sms:' + tel + '&body=' + encodeURIComponent(rdvSms(r)) + '">Confirmer au client par SMS</a>';
+      h += '<button class="btn outline block" data-act="rdv-done" data-id="' + esc(r.id) + '" type="button">' + (r.statut === 'fait' ? 'Remettre à prévoir' : 'Marquer comme fait') + '</button>' +
+        '<button class="btn danger block" data-act="rdv-del" data-id="' + esc(r.id) + '" type="button">Supprimer ce rendez-vous</button>';
+    }
+    openSheet(isNew ? 'Nouveau rendez-vous' : 'Rendez-vous', h);
+  }
+  function rdvSms(r) {
+    var who = state.profile.nom || 'WR Rénovation';
+    return 'Bonjour, je vous confirme notre rendez-vous ' + rdvDay(r.date, true).toLowerCase() + ' à ' + (r.heure || '').replace(':', 'h') + (r.adresse ? ' à ' + r.adresse : '') + '. À bientôt. ' + who;
+  }
+  function rdvRead(base) {
+    var v = function (i) { var e = $(i); return e ? e.value : ''; }, cid = v('rdv-client'), c = state.clients.filter(function (x) { return x.id === cid; })[0];
+    return Object.assign({}, base, { clientId: c ? c.id : '', clientNom: c ? c.nom : v('rdv-nom').trim(), date: v('rdv-date'), heure: v('rdv-heure'), duree: v('rdv-duree') || '60',
+      objet: v('rdv-objet') || 'Autre', adresse: v('rdv-adresse').trim(), notes: v('rdv-notes').trim(), rappel: v('rdv-rappel') || '60' });
+  }
+  function icsEsc(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+  function icsFold(l) { var o = []; while (l.length > 74) { o.push(l.slice(0, 74)); l = ' ' + l.slice(74); } o.push(l); return o.join('\r\n'); }
+  function icsLocal(d) { var p = function (n) { return String(n).padStart(2, '0'); }; return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + 'T' + p(d.getHours()) + p(d.getMinutes()) + '00'; }
+  function rdvIcs(r) {
+    var s = rdvAt(r); if (!s) return '';
+    var e = new Date(s.getTime() + (parseInt(r.duree, 10) || 60) * 60000), m = parseInt(r.rappel, 10) || 0;
+    var trig = m === 0 ? 'PT0S' : m % 1440 === 0 ? '-P' + (m / 1440) + 'D' : '-PT' + m + 'M';
+    var title = 'RDV ' + rdvName(r) + (r.objet ? ' – ' + r.objet : '');
+    var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Chantio//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT', 'UID:' + r.id + '@chantio',
+      'DTSTAMP:' + new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''), 'DTSTART:' + icsLocal(s), 'DTEND:' + icsLocal(e), 'SUMMARY:' + icsEsc(title)];
+    if (r.adresse) L.push('LOCATION:' + icsEsc(r.adresse));
+    if (r.notes) L.push('DESCRIPTION:' + icsEsc(r.notes));
+    L.push('BEGIN:VALARM', 'TRIGGER:' + trig, 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(title), 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR');
+    return L.map(icsFold).join('\r\n') + '\r\n';
+  }
   /* ---------- Expiration des devis ---------- */
   var EXP_JOURS = 7;
   function devisUntil(d) { return addDays(d.date || todayIso(), parseInt(d.validite, 10) || 30); }
@@ -901,7 +1108,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div style="margin-top:8px"><button class="btn small" data-act="set-backup" type="button">Sauvegarder maintenant</button></div></div>';
   }
   async function backupNow() {
-    var json = JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs }, null, 2), day = todayIso();
+    var json = JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs }, null, 2), day = todayIso();
     var to = (state.profile.email || '').trim();
     if (typeof repo.sendMail === 'function' && /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(to)) {
       toast('Envoi de la sauvegarde…');
@@ -944,7 +1151,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     return { n: mine.length, paid: sumFac(paid), billed: sumFac(billed), due: sumFac(mine.filter(isDue)), open: mine.filter(function (d) { return d.type === 'devis' && d.statut === 'Envoyé'; }).length, docs: mine };
   }
   function renderClients() {
-    $('main').innerHTML = '<div class="stack"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Clients</h1>' +
+    if (state.cview === 'agenda') { renderAgenda(); return; }
+    $('main').innerHTML = '<div class="stack">' + clientsHead('clients') + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Clients</h1>' +
       '<button class="btn small" data-act="new-client" type="button">' + ic('plus', 18) + ' Client</button></div>' +
       '<input id="cq" type="search" placeholder="Rechercher un client" value="' + esc(state.cq) + '" autocomplete="off"><div class="stack" id="clist"></div></div>';
     renderClientList();
@@ -1057,6 +1265,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         '<div class="stat"><div class="kicker">Reste à payer</div><div class="mid' + (s.due > 0 ? ' warnc' : '') + '">' + fmt(s.due) + '</div></div>' +
         '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + s.open + '</div></div></div>';
       if (tel || /^[^\s@]+@[^\s@]+$/.test(mail)) top += '<div class="row2">' + (tel ? '<a class="btn soft small" href="tel:' + tel + '">Appeler</a>' : '<span></span>') + (/^[^\s@]+@[^\s@]+$/.test(mail) ? '<a class="btn soft small" href="mailto:' + esc(mail) + '">Écrire</a>' : '<span></span>') + '</div>';
+      var mr = rdvSorted().filter(function (r) { return r.clientId === c.id && r.date >= todayIso() && r.statut !== 'fait'; });
+      top += '<div class="card flat"><div class="kicker">Rendez-vous à venir</div>' + (mr.length ? '<div class="stack">' + mr.slice(0, 3).map(rdvItem).join('') + '</div>' : '<p class="empty">Aucun rendez-vous prévu.</p>') +
+        '<button class="btn soft block" data-act="new-rdv" data-id="' + c.id + '" type="button">' + ic('cal', 18) + ' Prendre rendez-vous</button></div>';
       hist += '<div class="card flat"><div class="kicker">Historique · ' + s.n + ' document' + (s.n > 1 ? 's' : '') + '</div>' +
         (s.docs.length ? '<div class="stack">' + s.docs.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).map(docItem).join('') + '</div>' : '<p class="empty">Aucun document pour ce client.</p>') + '</div>';
       if (s.docs.length) hist += '<button class="btn outline block" data-act="client-csv" data-id="' + c.id + '" type="button">' + ic('download', 18) + ' Exporter l\'historique (CSV)</button>';
@@ -1080,7 +1291,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div class="card"><h2 class="h2">Chantier</h2><label class="f">Objet des travaux<input data-b="chantier.objet" placeholder="Ex. Réfection de la toiture" autocomplete="off"></label>' +
       '<label class="f">Adresse du chantier<input data-b="chantier.adresse" autocomplete="off"></label></div>' +
       '<div class="card"><h2 class="h2">Prestations</h2><div class="stack" id="ed-lines"></div>' +
-      '<button class="btn soft block" data-act="ed-add-line" type="button">' + ic('plus', 18) + ' Ajouter une prestation</button></div>' +
+      '<button class="btn soft block" data-act="ed-add-line" type="button">' + ic('plus', 18) + ' Ajouter une prestation</button><button class="btn outline block small" data-act="ed-save-model" type="button">Enregistrer comme modèle</button></div>' +
       '<div class="card"><h2 class="h2">Détails</h2><div class="row2"><label class="f">Date<input type="date" data-b="date"></label>' +
       '<label class="f" id="ed-extra"></label></div>' +
       '<div class="row2"><label class="f">Remise (%)<input data-b="remise" inputmode="decimal"></label>' +
@@ -1680,7 +1891,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   function refreshAppearance() { var c = $('appearance'); if (c) { c.innerHTML = appearanceInner(); refreshPreviews(); } }
 
   async function saveFile(name, data) {
-    var type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.json$/i.test(name) ? 'application/json' : /\.csv$/i.test(name) ? 'text/csv;charset=utf-8' : 'text/plain';
+    var type = /\.pdf$/i.test(name) ? 'application/pdf' : /\.json$/i.test(name) ? 'application/json' : /\.csv$/i.test(name) ? 'text/csv;charset=utf-8' : /\.ics$/i.test(name) ? 'text/calendar;charset=utf-8' : 'text/plain';
     var blob = new Blob([data], { type: type });
     try {
       var file = new File([blob], name, { type: type });
@@ -2000,12 +2211,55 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'sheet-close': closeSheet(); break;
       case 'menu-new':
         openSheet('Créer', '<button class="btn block" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 18) + ' Devis avec l\'assistant</button>' + (state.mode === 'db' ? '<button class="btn soft block" data-act="wz-start" type="button">Devis pas à pas</button>' : '') +
+          '<button class="btn soft block" data-act="open-modeles" type="button">' + ic('file', 18) + ' Devis à partir d\'un modèle</button>' +
           '<button class="btn soft block" data-act="new-devis" type="button">' + ic('file', 18) + ' Nouveau devis (libre)</button>' +
+          '<button class="btn soft block" data-act="new-rdv" type="button">' + ic('cal', 18) + ' Nouveau rendez-vous</button>' +
           '<button class="btn soft block" data-act="new-facture" type="button">' + ic('receipt', 18) + ' Nouvelle facture</button>' +
           '<button class="btn outline block" data-act="new-client" type="button">' + ic('users', 18) + ' Nouveau client</button>'); break;
       case 'ph-del': if (ed && ed.doc.photos) { ed.doc.photos.splice(Number(b.getAttribute('data-i')), 1); edPhotos(); } break;
       case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
       case 'set-backup': backupNow(); break;
+      case 'cview': state.cview = b.getAttribute('data-v') === 'agenda' ? 'agenda' : 'clients'; renderClients(); break;
+      case 'open-agenda': state.cview = 'agenda'; go('clients'); break;
+      case 'new-rdv': closeSheet(); openRdv('', id); break;
+      case 'open-rdv': closeSheet(); openRdv(id); break;
+      case 'rdv-save': {
+        var rb = id && state.rdvs.filter(function (x) { return x.id === id; })[0], rn = rdvRead(rb || { id: id, statut: 'prevu', createdAt: Date.now() });
+        if (!rdvAt(rn)) { toast('Choisis la date et l\'heure.'); break; }
+        if (!rn.clientId && !rn.clientNom) { toast('Choisis un client ou écris un nom.'); break; }
+        if (await guard(function () { return repo.put('rdvs', rn); })) { openRdv(rn.id); toast(b.getAttribute('data-new') ? 'Rendez-vous enregistré. Ajoute-le à ton calendrier pour être prévenu.' : 'Rendez-vous mis à jour.'); }
+        break;
+      }
+      case 'rdv-ics': {
+        var ri = state.rdvs.filter(function (x) { return x.id === id; })[0], rr = ri && rdvRead(ri);
+        if (rr && rdvAt(rr)) { if (await guard(function () { return repo.put('rdvs', rr); })) saveFile('rendez-vous-' + (rdvName(rr).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'client') + '.ics', rdvIcs(rr)); }
+        else toast('Choisis la date et l\'heure.');
+        break;
+      }
+      case 'rdv-done': { var rd = state.rdvs.filter(function (x) { return x.id === id; })[0]; if (rd) { var rd2 = Object.assign({}, rd, { statut: rd.statut === 'fait' ? 'prevu' : 'fait' }); if (await guard(function () { return repo.put('rdvs', rd2); })) { closeSheet(); toast(rd2.statut === 'fait' ? 'Rendez-vous terminé.' : 'Rendez-vous remis à prévoir.'); } } break; }
+      case 'rdv-del':
+        if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = 'Confirmer la suppression'; clearTimeout(armT); armT = setTimeout(function () { b.removeAttribute('data-armed'); b.textContent = 'Supprimer ce rendez-vous'; }, 3000); break; }
+        if (await guard(function () { return repo.del('rdvs', id); })) { closeSheet(); toast('Rendez-vous supprimé.'); } break;
+      case 'open-modeles': closeSheet(); openModeles(); break;
+      case 'model-use': {
+        var mk = b.getAttribute('data-k') || '', mm = mk.indexOf('p-') === 0 ? MODELES[parseInt(mk.slice(2), 10)] : (state.profile.modeles || []).filter(function (x) { return 'm-' + x.id === mk; })[0];
+        if (mm) startModele(mm); break;
+      }
+      case 'model-del': {
+        if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.style.color = 'var(--bad)'; clearTimeout(armT); armT = setTimeout(function () { b.removeAttribute('data-armed'); b.style.color = ''; }, 3000); toast('Touche encore pour supprimer ce modèle.'); break; }
+        state.profile.modeles = (state.profile.modeles || []).filter(function (x) { return x.id !== id; });
+        if (await guard(function () { return repo.saveProfile(); })) { openModeles(); toast('Modèle supprimé.'); } break;
+      }
+      case 'ed-save-model':
+        if (!ed || !ed.doc.lignes.some(function (l) { return l.des; })) { toast('Ajoute d\'abord des prestations au devis.'); break; }
+        openSheet('Enregistrer comme modèle', '<label class="f">Nom du modèle<input id="mod-name" value="' + esc(ed.doc.chantier.objet || '') + '" autocomplete="off" placeholder="Ex. Toiture ardoises"></label><button class="btn block" data-act="model-save" type="button">Enregistrer</button><p class="kicker">Les prestations, quantités, prix, délai et remarques de ce devis seront gardés (pas le client).</p>'); break;
+      case 'model-save': {
+        var mn = ($('mod-name') && $('mod-name').value || '').trim(); if (!mn || !ed) { toast('Donne un nom au modèle.'); break; }
+        var nm = { id: rid(), nom: mn.slice(0, 80), objet: ed.doc.chantier.objet || '', delai: ed.doc.delai || '', notes: ed.doc.notes || '', info: 'mon modèle',
+          lignes: ed.doc.lignes.filter(function (l) { return l.des; }).map(function (l) { return [l.des, String(l.qte || '1'), l.unite || '', String(l.pu || '0')]; }) };
+        state.profile.modeles = (state.profile.modeles || []).concat([nm]).slice(-20);
+        if (await guard(function () { return repo.saveProfile(); })) { closeSheet(); toast('Modèle enregistré. Retrouve-le dans « Devis à partir d\'un modèle ».'); } break;
+      }
       case 'exp-recettes': { var ey = ($('exp-y') && $('exp-y').value) || todayIso().slice(0, 4); saveFile('livre-des-recettes-' + ey + '.csv', csvRecettes(ey)); break; }
       case 'exp-docs': { var ey2 = ($('exp-y') && $('exp-y').value) || todayIso().slice(0, 4); saveFile('documents-' + ey2 + '.csv', csvDocs(state.docs.filter(function (d) { return (d.date || '').slice(0, 4) === ey2; }))); break; }
       case 'client-csv': { var cc = state.clients.filter(function (x) { return x.id === id; })[0]; if (cc) saveFile('client-' + (cc.nom || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) + '.csv', csvDocs(clientStats(cc).docs)); break; }
@@ -2167,7 +2421,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'logo-del': state.logo = null; loadLogo(); await guard(function () { return repo.saveLogo(); }); refreshAppearance(); break;
       case 'pv-zoom': { var w = $('pvwrap'); if (w) { w.classList.toggle('zoom'); b.textContent = w.classList.contains('zoom') ? 'Page entière' : 'Zoom'; } break; }
       case 'ed-preview': if (ed) openViewer(ed.doc); break;
-      case 'set-export': markBackup(); saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs }, null, 2)); break;
+      case 'set-export': markBackup(); saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs }, null, 2)); break;
     }
   }
   document.addEventListener('click', function (e) {
@@ -2211,6 +2465,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   });
   document.addEventListener('change', async function (e) {
     var t = e.target;
+    if (t.id === 'rdv-client') { var pc = state.clients.filter(function (x) { return x.id === t.value; })[0], pa = $('rdv-adresse'), pn = $('rdv-nom'); if (pc) { if (pa && !pa.value.trim()) pa.value = pc.adresse || ''; if (pn) pn.value = ''; } return; }
     if (t.id === 'logo-file' && t.files && t.files[0]) { handleLogo(t.files[0]); t.value = ''; return; }
     if (t.hasAttribute && t.hasAttribute('data-photo')) { var pf = t.files; await addPhotos(pf); t.value = ''; return; }
     if (ed && t.getAttribute('data-l') === 'unite') { var row = t.closest('.line'); var l = ed.doc.lignes.filter(function (x) { return x.id === row.getAttribute('data-lid'); })[0]; if (l) l.unite = t.value; }
