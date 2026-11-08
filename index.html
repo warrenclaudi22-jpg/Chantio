@@ -299,7 +299,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   ];
   function defaultProfile() {
     return {
-      nom: '', adresse: '', siret: '', tel: '', email: '', assurance: '', iban: '',
+      nom: '', metier: '', adresse: '', siret: '', tel: '', email: '', assurance: '', iban: '',
       mentionTva: 'TVA non applicable, art. 293 B du CGI',
       delaiPaiement: '30', tpl: 'moderne', color: '#ff8a1f', logoPos: 'gauche', logoSize: 'moyen',
       conditions: 'Acompte à la commande, solde à réception des travaux.',
@@ -308,7 +308,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     };
   }
 
-  var state = { route: 'accueil', mode: 'pending', profile: defaultProfile(), clients: [], docs: [], rdvs: [], cview: 'clients', filter: 'tous', q: '', cq: '', readOnly: false, logo: null, logoImg: null };
+  var state = { route: 'accueil', mode: 'pending', profile: defaultProfile(), clients: [], docs: [], rdvs: [], chantiers: [], cview: 'clients', filter: 'tous', q: '', cq: '', readOnly: false, logo: null, logoImg: null };
   var ed = null, ac = null, catTab = 'mes', catQ = '';
 
   function todayIso() { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -352,27 +352,28 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
   /* ---------- Stockage ---------- */
   function lsGet() { try { var v = localStorage.getItem('devisfacile'); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
-  function lsSave() { try { localStorage.setItem('devisfacile', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs, logo: state.logo })); } catch (e) { /* ignoré */ } }
+  function lsSave() { try { localStorage.setItem('devisfacile', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs, chantiers: state.chantiers, logo: state.logo })); } catch (e) { /* ignoré */ } }
   var CFG = window.CHANTIO_CONFIG || {};
   var sb = null, authBusy = false;
-  var KIND = { clients: 'client', docs: 'doc', rdvs: 'rdv' };
+  var KIND = { clients: 'client', docs: 'doc', rdvs: 'rdv', chantiers: 'chantier' };
   var repo = {};
   repo.configured = function () { return !!(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY); };
 
   function resetState() {
-    state.profile = defaultProfile(); state.clients = []; state.docs = []; state.rdvs = []; state.logo = null; state.logoImg = null;
+    state.profile = defaultProfile(); state.clients = []; state.docs = []; state.rdvs = []; state.chantiers = []; state.logo = null; state.logoImg = null;
     state.user = null; state.route = 'accueil'; state.setTab = 'entreprise';
   }
   function applyRows(rows) {
-    var clients = [], docs = [], rdvs = [], profile = null, logo = null;
+    var clients = [], docs = [], rdvs = [], chantiers = [], profile = null, logo = null;
     rows.forEach(function (x) {
       if (x.kind === 'client') clients.push(x.data);
       else if (x.kind === 'doc') docs.push(x.data);
       else if (x.kind === 'rdv') rdvs.push(x.data);
+      else if (x.kind === 'chantier') chantiers.push(x.data);
       else if (x.kind === 'profile' && x.id === 'main') profile = x.data;
       else if (x.kind === 'logo' && x.id === 'main') logo = x.data;
     });
-    state.clients = clients; state.docs = docs; state.rdvs = rdvs;
+    state.clients = clients; state.docs = docs; state.rdvs = rdvs; state.chantiers = chantiers;
     state.profile = Object.assign(defaultProfile(), profile || {});
     state.logo = logo && logo.data ? { data: logo.data, w: logo.w, h: logo.h } : null;
   }
@@ -414,7 +415,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       state.mode = 'gate'; state.gate = 'loaderr'; state.gateMsg = frErr(r.error); start(); return;
     }
     applyRows(r.data || []);
-    if (outbox.length) { outbox.forEach(function (o) { var k = o.kind === 'client' ? 'clients' : o.kind === 'doc' ? 'docs' : o.kind === 'rdv' ? 'rdvs' : null; if (!k) return; state[k] = state[k].filter(function (x) { return x.id !== o.id; }); if (o.op === 'upsert') state[k].push(o.data); }); }
+    if (outbox.length) { outbox.forEach(function (o) { var k = o.kind === 'client' ? 'clients' : o.kind === 'doc' ? 'docs' : o.kind === 'rdv' ? 'rdvs' : o.kind === 'chantier' ? 'chantiers' : null; if (!k) return; state[k] = state[k].filter(function (x) { return x.id !== o.id; }); if (o.op === 'upsert') state[k].push(o.data); }); }
     try { localStorage.setItem('chantio_lastuser', JSON.stringify({ id: user.id, email: user.email })); } catch (e) { /* ignoré */ }
     persistCache();
     state.gateMsg = ''; state.gateInfo = '';
@@ -446,7 +447,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
 
   repo.local = function () {
     var d = lsGet(); state.mode = 'local';
-    if (d) { state.profile = Object.assign(defaultProfile(), d.profile || {}); state.clients = d.clients || []; state.docs = d.docs || []; state.rdvs = d.rdvs || []; state.logo = d.logo || null; }
+    if (d) { state.profile = Object.assign(defaultProfile(), d.profile || {}); state.clients = d.clients || []; state.docs = d.docs || []; state.rdvs = d.rdvs || []; state.chantiers = d.chantiers || []; state.logo = d.logo || null; }
     loadLogo(); start();
   };
   async function guard(fn) {
@@ -474,6 +475,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     state.clients.forEach(function (c) { rows.push({ kind: 'client', id: c.id, data: c }); });
     state.docs.forEach(function (d) { rows.push({ kind: 'doc', id: d.id, data: d }); });
     state.rdvs.forEach(function (x) { rows.push({ kind: 'rdv', id: x.id, data: x }); });
+    state.chantiers.forEach(function (x) { rows.push({ kind: 'chantier', id: x.id, data: x }); });
     rows.push({ kind: 'profile', id: 'main', data: state.profile });
     if (state.logo) rows.push({ kind: 'logo', id: 'main', data: state.logo });
     return rows;
@@ -598,6 +600,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       if (!Array.isArray(d.lignes)) d.lignes = [];
     });
     if (!Array.isArray(state.rdvs)) state.rdvs = [];
+    if (!Array.isArray(state.chantiers)) state.chantiers = [];
+    state.chantiers = state.chantiers.filter(function (c) { return c && typeof c === 'object' && c.id; }).map(function (c) { if (!Array.isArray(c.depenses)) c.depenses = []; c.depenses = c.depenses.filter(function (x) { return x && typeof x === 'object'; }); if (!Array.isArray(c.docIds)) c.docIds = []; return c; });
     state.rdvs = state.rdvs.filter(function (r) { return r && typeof r === 'object' && r.id; });
     if (!Array.isArray(state.clients)) state.clients = [];
     state.clients = state.clients.filter(function (c) { return c && typeof c === 'object'; });
@@ -626,7 +630,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     applyTheme();
     if (state.route === 'accueil') renderAccueil();
     else if (state.route === 'documents' && $('list')) renderDocList();
-    else if (state.route === 'clients') { if ($('clist')) renderClientList(); else if (state.cview === 'agenda') renderAgenda(); }
+    else if (state.route === 'clients') { if ($('clist')) renderClientList(); else if (state.cview === 'agenda') renderAgenda(); else if (state.cview === 'chantiers') renderChantiers(); }
     else if (state.route === 'reglages' && $('sform') && !($('sform').contains(document.activeElement))) fillSettings();
   }
   function start() { applyTheme(); buildDock(); var n = location.hash.slice(1); if (n === 'agenda') { state.cview = 'agenda'; n = 'clients'; } if (ROUTES.indexOf(n) >= 0) state.route = n; render(); }
@@ -708,6 +712,16 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     }
     h += '<div class="stack"><h2 class="h2">Activité récente</h2>' + (recent.length ? recent.map(docItem).join('') : '<div class="card flat empty">Rien pour l\'instant. Tes devis et factures apparaîtront ici.</div>') + '</div></div>';
     $('main').innerHTML = h;
+    maybeWelcome();
+  }
+  function maybeWelcome() {
+    if (state.welcomed || state.mode !== 'db' || state.profile.metier || state.profile.nom) return;
+    state.welcomed = true;
+    setTimeout(function () { if (state.route !== 'accueil' || !$('sheetwrap').hidden) return; openSheet('Bienvenue sur Chantio', '<p class="lead" style="margin:0">Dis-nous ton métier pour des modèles de devis adaptés. Tu pourras tout modifier dans les réglages.</p>' +
+      '<label class="f">Nom de ton entreprise<input id="wl-nom" autocomplete="off"></label>' +
+      '<label class="f">Ton métier<select id="wl-metier"><option value="couverture">Couvreur, zingueur</option><option value="peinture">Peintre, façadier</option><option value="tous">Couverture et peinture</option><option value="autre">Autre métier du bâtiment</option></select></label>' +
+      '<p class="kicker">Chantio est prévu pour les auto-entrepreneurs : « TVA non applicable, art. 293 B du CGI » figure sur tes documents.</p>' +
+      '<button class="btn block" data-act="welcome-save" type="button">Commencer</button><button class="btn outline block" data-act="sheet-close" type="button">Plus tard</button>'); }, 400);
   }
   /* ---------- Photos de chantier ---------- */
   var PHOTO_MAX = 6;
@@ -890,8 +904,47 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         ["Recherche de l'origine de la fuite : inspection de la couverture, des solins, noues, cheminées et raccords, avec photos transmises au client avant réparation.", "1", "forfait", "180"],
         ["Remplacement des tuiles ou ardoises cassées, fissurées ou déplacées, avec fourniture des éléments.", "10", "u", "8"],
         ["Reprise d'étanchéité sur solins, noues ou raccords défectueux : fourniture et pose de zinc ou bande d'étanchéité adaptée, fixations et finitions.", "5", "ml", "45"],
-        ["Contrôle final de l'étanchéité et nettoyage de l'intervention, évacuation des déchets.", "1", "forfait", "50"]]}
+        ["Contrôle final de l'étanchéité et nettoyage de l'intervention, évacuation des déchets.", "1", "forfait", "50"]]},
+    { nom: "Peinture intérieure : murs et plafonds", info: "exemple : 60 m² de murs", objet: "Mise en peinture des murs et plafonds : préparation des supports et deux couches de finition", m: 'p',
+      delai: "Début des travaux sous 2 semaines après acceptation du devis. Durée estimée : 3 à 5 jours ouvrés selon la surface et le nombre de pièces.",
+      lignes: [
+        ["Protection du chantier : bâchage des sols, plinthes, menuiseries et mobilier laissé sur place, adhésifs de masquage sur toutes les parties à préserver.", "1", "forfait", "120"],
+        ["Préparation des murs et plafonds : dépose des éléments gênants, lessivage, grattage des parties écaillées, rebouchage des trous et fissures à l'enduit, ponçage et dépoussiérage.", "60", "m²", "7"],
+        ["Application d'une sous-couche d'impression adaptée au support, pour une accroche optimale et une teinte uniforme.", "60", "m²", "5"],
+        ["Fourniture et application de deux couches de peinture acrylique mate ou satinée sur les murs, teinte au choix du client, finition soignée avec raccords nets aux angles.", "60", "m²", "16"],
+        ["Fourniture et application de deux couches de peinture blanche mate sur les plafonds, y compris les raccords aux angles et aux luminaires.", "25", "m²", "18"],
+        ["Remise en état : retrait des protections, nettoyage du chantier, évacuation des déchets.", "1", "forfait", "80"]]},
+    { nom: "Peinture des boiseries extérieures : volets, portes, fenêtres", info: "exemple : 6 volets", objet: "Remise en peinture des boiseries extérieures : volets, portes et fenêtres", m: 'p',
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 3 à 4 jours ouvrés, par temps sec.",
+      lignes: [
+        ["Dépose et repose des volets ou protection des menuiseries en place, selon la configuration, avec manipulation soignée pour ne pas les abîmer.", "1", "forfait", "150"],
+        ["Décapage et ponçage des anciennes peintures écaillées, traitement des parties abîmées, rebouchage à l'enduit bois et dépoussiérage complet.", "6", "u", "45"],
+        ["Application d'une sous-couche d'impression bois adaptée à l'extérieur, pour protéger le support et assurer l'accroche de la finition.", "6", "u", "25"],
+        ["Fourniture et application de deux couches de peinture ou lasure microporeuse pour l'extérieur, teinte au choix du client, finition régulière et durable.", "6", "u", "55"],
+        ["Peinture de la porte d'entrée ou de garage : préparation, sous-couche et deux couches de finition, quincaillerie protégée.", "1", "u", "180"],
+        ["Nettoyage du chantier et évacuation des déchets.", "1", "forfait", "60"]]},
+    { nom: "Nettoyage haute pression et hydrofuge de façade", info: "exemple : 80 m²", objet: "Nettoyage haute pression, traitement fongicide et hydrofuge de la façade", m: 'cp',
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 2 à 3 jours ouvrés, par temps sec.",
+      lignes: [
+        ["Protection du chantier : bâchage des menuiseries, plantations et éléments sensibles, balisage des abords.", "1", "forfait", "120"],
+        ["Fourniture, montage, location et démontage d'un échafaudage ou location de nacelle selon la hauteur de la façade, avec sécurité réglementaire.", "1", "forfait", "700"],
+        ["Nettoyage haute pression de la façade à pression adaptée au support, élimination des mousses, algues, lichens et salissures.", "80", "m²", "9"],
+        ["Application d'un traitement fongicide et algicide préventif sur l'ensemble de la façade, avec temps d'action avant rinçage.", "80", "m²", "5"],
+        ["Fourniture et application d'un hydrofuge de surface incolore, respirant, deux passes croisées pour protéger la façade de l'humidité et de la pollution.", "80", "m²", "12"],
+        ["Nettoyage complet du chantier et évacuation des déchets.", "1", "forfait", "80"]]},
+    { nom: "Lasure ou peinture de bardage bois", info: "exemple : 50 m²", objet: "Remise en état et protection du bardage bois par lasure ou peinture", m: 'cp',
+      delai: "Début des travaux sous 3 semaines après acceptation du devis. Durée estimée : 3 à 5 jours ouvrés, par temps sec.",
+      lignes: [
+        ["Protection du chantier : bâchage des sols, menuiseries et plantations, balisage des abords.", "1", "forfait", "100"],
+        ["Location et mise en place d'un échafaudage ou d'une nacelle selon la hauteur du bardage, avec sécurité réglementaire.", "1", "forfait", "600"],
+        ["Nettoyage et brossage du bardage, élimination des mousses, de la poussière et des anciennes finitions non adhérentes, ponçage des zones dégradées.", "50", "m²", "12"],
+        ["Traitement fongicide et insecticide du bois, remplacement ou réparation ponctuelle des lames abîmées sur devis complémentaire.", "50", "m²", "6"],
+        ["Fourniture et application de deux couches de lasure ou de peinture microporeuse pour bardage, teinte au choix du client, finition uniforme.", "50", "m²", "22"],
+        ["Nettoyage du chantier et évacuation des déchets.", "1", "forfait", "70"]]}
   ];
+  function modeleMetier(m) { return m.m || (/fa[cç]ade|ravalement/i.test(m.nom || '') ? 'cp' : 'c'); }
+  function modeleShown(m) { var k = state.profile.metier; if (!k || k === 'tous' || k === 'autre' || state.modAll) return true; return modeleMetier(m).indexOf(k === 'peinture' ? 'p' : 'c') >= 0; }
+  var PEINT_CAT = [['Peinture intérieure murs et plafonds', 'm²'], ['Préparation des supports (enduit, ponçage)', 'm²'], ['Sous-couche d\'impression', 'm²'], ['Peinture de façade', 'm²'], ['Peinture de boiseries, volets, portes', 'u'], ['Protection et bâchage du chantier', 'forfait'], ['Évacuation des déchets', 'forfait']];
   function modeleLignes(m) { return (m.lignes || []).map(function (l) { return { id: rid(), des: l[0], qte: l[1], unite: l[2], pu: l[3] }; }); }
   function modeleTotal(m) { var t = 0; (m.lignes || []).forEach(function (l) { t += num(l[1]) * num(l[3]); }); return t; }
   function modeleItemHtml(m, key, own) {
@@ -903,13 +956,100 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   function openModeles() {
     var mine = state.profile.modeles || [], h = '';
     if (mine.length) h += '<div class="kicker">Mes modèles</div><div class="stack">' + mine.map(function (m) { return modeleItemHtml(m, 'm-' + m.id, true); }).join('') + '</div>';
-    h += '<div class="kicker">Modèles prêts à l\'emploi</div><div class="stack">' + MODELES.map(function (m, i) { return modeleItemHtml(m, 'p-' + i, false); }).join('') + '</div>' +
+    h += '<div class="kicker">Modèles prêts à l\'emploi</div><div class="stack">' + MODELES.map(function (m, i) { return modeleShown(m) ? modeleItemHtml(m, 'p-' + i, false) : ''; }).join('') + '</div>' + (state.profile.metier && state.profile.metier !== 'tous' && state.profile.metier !== 'autre' && !state.modAll ? '<button class="btn outline block" data-act="model-all" type="button">Voir les modèles de tous les métiers</button>' : '') +
       '<p class="kicker">Tout reste modifiable ensuite : textes, quantités et prix. Les prix sont indicatifs, ajuste-les. Pour garder ta propre version, ouvre un devis et touche « Enregistrer comme modèle ».</p>';
     openSheet('Devis à partir d\'un modèle', h);
   }
   function startModele(m) {
     var d = newDoc('devis'); d.chantier.objet = m.objet || m.nom || ''; d.delai = m.delai || ''; d.notes = m.notes || ''; d.lignes = modeleLignes(m);
     closeSheet(); openEditor(d, true); toast('Modèle chargé. Ajuste les quantités et les prix.');
+  }
+  /* ---------- Chantiers : suivi et rentabilité ---------- */
+  var CH_STATUTS = [['prevu', 'À planifier'], ['cours', 'En cours'], ['fini', 'Terminé']];
+  var CH_CATS = ['Matériaux', 'Location', 'Sous-traitance', 'Carburant', 'Fournitures', 'Autre'];
+  function chLabel(st) { var f = CH_STATUTS.filter(function (x) { return x[0] === st; })[0]; return f ? f[1] : 'À planifier'; }
+  function chDocs(c) { return (c.docIds || []).map(function (id) { return state.docs.filter(function (d) { return d.id === id; })[0]; }).filter(Boolean); }
+  function chStats(c) {
+    var docs = chDocs(c), fac = docs.filter(function (d) { return d.type === 'facture' && d.statut !== 'Annulée'; }), dv = docs.filter(function (d) { return d.type === 'devis' && d.statut === 'Accepté'; });
+    var factured = r2(sumFac(fac)), paid = r2(sumFac(fac.filter(function (d) { return d.statut === 'Payée' || isAvoir(d); }))), quoted = r2(sumFac(dv));
+    var spent = r2((c.depenses || []).reduce(function (a, x) { return a + num(x.montant); }, 0));
+    var base = factured > 0 ? factured : quoted, estimated = factured <= 0 && quoted > 0;
+    var marge = r2(base - spent), pct = base > 0 ? Math.round(marge / base * 100) : null;
+    return { factured: factured, paid: paid, quoted: quoted, spent: spent, base: base, estimated: estimated, marge: marge, pct: pct, nDocs: docs.length };
+  }
+  function chName(c) { return c.nom || c.clientNom || 'Chantier'; }
+  function chItem(c) {
+    var s = chStats(c), pc = c.statut === 'fini' ? 'good' : c.statut === 'cours' ? 'warn' : 'grey', sub = [c.clientNom, c.adresse].filter(Boolean).join(' · ');
+    return '<button type="button" class="item" data-act="open-ch" data-id="' + esc(c.id) + '"><span class="ico">' + ic('home', 20) + '</span>' +
+      '<span class="mid-col"><span class="t">' + esc(chName(c)) + '</span><span class="s">' + esc(sub || 'Sans client') + '</span></span>' +
+      '<span class="r">' + (s.base > 0 || s.spent > 0 ? '<span class="amt' + (s.marge < 0 ? ' warnc' : '') + '">' + fmt(s.marge) + '</span>' : '') + '<span class="pill ' + pc + '">' + esc(chLabel(c.statut)) + '</span></span></button>';
+  }
+  function renderChantiers() {
+    var all = state.chantiers.slice().sort(function (a, b) { var o = { cours: 0, prevu: 1, fini: 2 }; return (o[a.statut] || 0) - (o[b.statut] || 0) || (b.createdAt || 0) - (a.createdAt || 0); });
+    var tot = { marge: 0, spent: 0, base: 0 }; state.chantiers.forEach(function (c) { var s = chStats(c); tot.marge += s.marge; tot.spent += s.spent; tot.base += s.base; });
+    var h = '<div class="stack">' + clientsHead('chantiers') + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Chantiers</h1>' +
+      '<button class="btn small" data-act="new-ch" type="button">' + ic('plus', 18) + ' Chantier</button></div>';
+    if (state.chantiers.length) h += '<div class="grid2 cstats"><div class="stat"><div class="kicker">Chantiers en cours</div><div class="mid">' + state.chantiers.filter(function (c) { return c.statut === 'cours'; }).length + '</div></div>' +
+      '<div class="stat"><div class="kicker">Marge totale</div><div class="mid' + (tot.marge < 0 ? ' warnc' : '') + '">' + fmt(r2(tot.marge)) + '</div></div></div>';
+    if (!all.length) h += '<div class="card flat empty">Aucun chantier. Touche « Chantier » pour suivre un chantier : devis, factures, dépenses et marge réelle au même endroit.</div>';
+    else h += '<div class="stack">' + all.map(chItem).join('') + '</div>';
+    $('main').innerHTML = h + '</div>';
+  }
+  function chForm(c) {
+    var cs = state.clients.slice().sort(function (a, b) { return (a.nom || '').localeCompare(b.nom || '', 'fr'); });
+    return '<label class="f">Nom du chantier<input id="ch-nom" value="' + esc(c.nom) + '" autocomplete="off" placeholder="Ex. Toiture maison Le Gall"></label>' +
+      '<label class="f">Client<select id="ch-client"><option value="">Choisir un client…</option>' + cs.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === c.clientId ? ' selected' : '') + '>' + esc(x.nom) + '</option>'; }).join('') + '</select></label>' +
+      '<label class="f">Adresse du chantier<input id="ch-adresse" value="' + esc(c.adresse) + '" autocomplete="off"></label>' +
+      '<div class="row2"><label class="f">Début<input id="ch-debut" type="date" value="' + esc(c.debut) + '"></label><label class="f">Fin<input id="ch-fin" type="date" value="' + esc(c.fin) + '"></label></div>' +
+      '<label class="f">État<select id="ch-statut">' + CH_STATUTS.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === c.statut ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label class="f">Notes<textarea id="ch-notes" rows="2">' + esc(c.notes) + '</textarea></label>';
+  }
+  function chRead(base) {
+    var v = function (i) { var e = $(i); return e ? e.value : ''; }, cid = v('ch-client'), cl = state.clients.filter(function (x) { return x.id === cid; })[0];
+    return Object.assign({}, base, { nom: v('ch-nom').trim(), clientId: cl ? cl.id : '', clientNom: cl ? cl.nom : '', adresse: v('ch-adresse').trim(), debut: v('ch-debut'), fin: v('ch-fin'), statut: v('ch-statut') || 'prevu', notes: v('ch-notes').trim() });
+  }
+  function openChantier(id, clientId) {
+    var c = id ? state.chantiers.filter(function (x) { return x.id === id; })[0] : null, isNew = !c;
+    if (isNew) {
+      var c0 = state.clients.filter(function (x) { return x.id === clientId; })[0];
+      c = { id: rid(), nom: '', clientId: c0 ? c0.id : '', clientNom: c0 ? c0.nom : '', adresse: c0 ? (c0.adresse || '') : '', debut: '', fin: '', statut: 'prevu', notes: '', depenses: [], docIds: [], createdAt: Date.now() };
+    }
+    var h = '';
+    if (!isNew) {
+      var s = chStats(c), bar = s.base > 0 ? Math.max(0, Math.min(100, Math.round(s.spent / s.base * 100))) : 0;
+      h += '<div class="card flat"><div class="kicker">Rentabilité' + (s.estimated ? ' (prévue, d\'après le devis accepté)' : '') + '</div>' +
+        '<div class="grid2 cstats"><div class="stat"><div class="kicker">' + (s.estimated ? 'Devis accepté' : 'Facturé') + '</div><div class="mid">' + fmt(s.base) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Dépenses</div><div class="mid">' + fmt(s.spent) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Marge</div><div class="mid' + (s.marge < 0 ? ' warnc' : '') + '">' + fmt(s.marge) + '</div></div>' +
+        '<div class="stat"><div class="kicker">Marge en %</div><div class="mid' + (s.marge < 0 ? ' warnc' : '') + '">' + (s.pct === null ? '–' : s.pct + ' %') + '</div></div></div>' +
+        '<div style="height:8px;border-radius:6px;background:var(--sky);overflow:hidden;margin-top:10px"><div style="height:100%;width:' + bar + '%;background:' + (s.marge < 0 ? 'var(--bad)' : 'var(--accent)') + '"></div></div>' +
+        (s.base <= 0 ? '<p class="empty">Lie un devis accepté ou une facture pour voir la marge.</p>' : '') + '</div>';
+    }
+    h += chForm(c) + '<button class="btn ' + (isNew ? '' : 'soft ') + 'block" data-act="ch-save" data-id="' + esc(c.id) + '" data-new="' + (isNew ? '1' : '') + '" type="button">' + (isNew ? 'Créer le chantier' : 'Enregistrer') + '</button>';
+    if (!isNew) {
+      var docs = chDocs(c);
+      h += '<div class="card flat"><div class="kicker">Devis et factures liés</div>' +
+        (docs.length ? '<div class="stack">' + docs.map(function (d) { return docItem(d) + '<button class="btn outline small" data-act="ch-unlink" data-id="' + esc(c.id) + '" data-doc="' + esc(d.id) + '" type="button">Retirer ' + esc(d.numero) + '</button>'; }).join('') + '</div>' : '<p class="empty">Aucun document lié.</p>') +
+        '<button class="btn soft block" data-act="ch-link" data-id="' + esc(c.id) + '" type="button">Lier un devis ou une facture</button>' +
+        '<button class="btn outline block" data-act="ch-newdevis" data-id="' + esc(c.id) + '" type="button">Créer un devis pour ce chantier</button></div>';
+      var dp = (c.depenses || []).slice().sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+      h += '<div class="card flat"><div class="kicker">Dépenses · ' + fmt(chStats(c).spent) + '</div>' +
+        (dp.length ? '<div class="stack">' + dp.map(function (x) { return '<div class="item" style="cursor:default"><span class="mid-col"><span class="t">' + esc(x.label || x.cat || 'Dépense') + '</span><span class="s">' + esc([x.cat, frDate(x.date)].filter(Boolean).join(' · ')) + '</span></span><span class="r"><span class="amt">' + fmt(num(x.montant)) + '</span><button class="icon-btn" data-act="ch-dep-del" data-id="' + esc(c.id) + '" data-dep="' + esc(x.id) + '" type="button" aria-label="Supprimer la dépense">' + ic('x') + '</button></span></div>'; }).join('') + '</div>' : '<p class="empty">Aucune dépense saisie.</p>') +
+        '<label class="f">Dépense<input id="dep-label" autocomplete="off" placeholder="Ex. Ardoises, échafaudage, gasoil"></label>' +
+        '<div class="row2"><label class="f">Montant (€)<input id="dep-montant" inputmode="decimal" placeholder="0"></label><label class="f">Catégorie<select id="dep-cat">' + CH_CATS.map(function (o) { return '<option>' + o + '</option>'; }).join('') + '</select></label></div>' +
+        '<label class="f">Date<input id="dep-date" type="date" value="' + todayIso() + '"></label>' +
+        '<button class="btn block" data-act="ch-dep-add" data-id="' + esc(c.id) + '" type="button">' + ic('plus', 18) + ' Ajouter la dépense</button></div>';
+      h += '<button class="btn danger block" data-act="ch-del" data-id="' + esc(c.id) + '" type="button">Supprimer ce chantier</button>';
+    }
+    openSheet(isNew ? 'Nouveau chantier' : chName(c), h);
+  }
+  function openChLink(id) {
+    var c = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (!c) return;
+    var taken = {}; state.chantiers.forEach(function (x) { (x.docIds || []).forEach(function (d) { taken[d] = x.id; }); });
+    var L = state.docs.filter(function (d) { return !taken[d.id] && d.statut !== 'Annulée' && (!c.clientId || (d.client && d.client.id === c.clientId)); }).sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    var h = L.length ? '<div class="stack">' + L.map(function (d) { return '<div>' + docItem(d) + '<button class="btn soft small block" data-act="ch-link-pick" data-id="' + esc(c.id) + '" data-doc="' + esc(d.id) + '" type="button">Lier ' + esc(d.numero) + '</button></div>'; }).join('') + '</div>' : '<p class="empty">Aucun document disponible' + (c.clientId ? ' pour ce client' : '') + '. Un document ne peut être lié qu\'à un seul chantier.</p>';
+    h += '<button class="btn outline block" data-act="open-ch" data-id="' + esc(c.id) + '" type="button">Retour au chantier</button>';
+    openSheet('Lier un document', h);
   }
   /* ---------- Rendez-vous / agenda ---------- */
   var RDV_OBJETS = ['Visite pour devis', 'Début de chantier', 'Suivi de chantier', 'Réception des travaux', 'Autre'];
@@ -947,7 +1087,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   }
   function clientsHead(active) {
     return '<div class="seg"><button type="button" data-act="cview" data-v="clients" aria-pressed="' + (active === 'clients') + '">Clients</button>' +
-      '<button type="button" data-act="cview" data-v="agenda" aria-pressed="' + (active === 'agenda') + '">Agenda</button></div>';
+      '<button type="button" data-act="cview" data-v="agenda" aria-pressed="' + (active === 'agenda') + '">Agenda</button>' +
+      '<button type="button" data-act="cview" data-v="chantiers" aria-pressed="' + (active === 'chantiers') + '">Chantiers</button></div>';
   }
   function pushCard() {
     if (!repo.pushStatus) return '';
@@ -1003,7 +1144,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     openSheet(isNew ? 'Nouveau rendez-vous' : 'Rendez-vous', h);
   }
   function rdvSms(r) {
-    var who = state.profile.nom || 'WR Rénovation';
+    var who = state.profile.nom || '';
     return 'Bonjour, je vous confirme notre rendez-vous ' + rdvDay(r.date, true).toLowerCase() + ' à ' + (r.heure || '').replace(':', 'h') + (r.adresse ? ' à ' + r.adresse : '') + '. À bientôt. ' + who;
   }
   function rdvRead(base) {
@@ -1123,7 +1264,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div style="margin-top:8px"><button class="btn small" data-act="set-backup" type="button">Sauvegarder maintenant</button></div></div>';
   }
   async function backupNow() {
-    var json = JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs }, null, 2), day = todayIso();
+    var json = JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs, chantiers: state.chantiers }, null, 2), day = todayIso();
     var to = (state.profile.email || '').trim();
     if (typeof repo.sendMail === 'function' && /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/.test(to)) {
       toast('Envoi de la sauvegarde…');
@@ -1167,6 +1308,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   }
   function renderClients() {
     if (state.cview === 'agenda') { renderAgenda(); return; }
+    if (state.cview === 'chantiers') { renderChantiers(); return; }
     $('main').innerHTML = '<div class="stack">' + clientsHead('clients') + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1 class="h1">Clients</h1>' +
       '<button class="btn small" data-act="new-client" type="button">' + ic('plus', 18) + ' Client</button></div>' +
       '<input id="cq" type="search" placeholder="Rechercher un client" value="' + esc(state.cq) + '" autocomplete="off"><div class="stack" id="clist"></div></div>';
@@ -1204,6 +1346,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     if (tab === 'entreprise') {
       h += '<div class="card"><h2 class="h2">Mon entreprise</h2><p class="lead" style="margin:0">Ces informations figurent sur tous tes documents.</p>' +
         '<label class="f">Nom commercial<input data-p="nom" autocomplete="off"></label>' +
+        '<label class="f">Mon métier<select data-p="metier"><option value="">Non précisé</option><option value="couverture">Couvreur, zingueur</option><option value="peinture">Peintre, façadier</option><option value="tous">Couverture et peinture</option><option value="autre">Autre métier du bâtiment</option></select></label>' +
         '<label class="f">Adresse<input data-p="adresse" autocomplete="off"></label>' +
         '<div class="row2"><label class="f">SIRET<input data-p="siret" inputmode="numeric" autocomplete="off"></label><label class="f">Téléphone<input data-p="tel" type="tel" autocomplete="off"></label></div>' +
         '<label class="f">E-mail<input data-p="email" type="email" autocomplete="off"></label>' +
@@ -2275,7 +2418,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'ph-del': if (ed && ed.doc.photos) { ed.doc.photos.splice(Number(b.getAttribute('data-i')), 1); edPhotos(); } break;
       case 'doc-relance': { var drd = docById(id); if (drd) openSend(drd, true); break; }
       case 'set-backup': backupNow(); break;
-      case 'cview': state.cview = b.getAttribute('data-v') === 'agenda' ? 'agenda' : 'clients'; renderClients(); break;
+      case 'cview': state.cview = ({ agenda: 1, chantiers: 1 })[b.getAttribute('data-v')] ? b.getAttribute('data-v') : 'clients'; renderClients(); break;
       case 'push-on': case 'push-off': case 'push-test': {
         if (state.pushBusy || !repo.pushStatus) break;
         state.pushBusy = true; renderAgenda();
@@ -2284,6 +2427,50 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         toast(pr && pr.msg ? pr.msg : (pr && pr.ok ? 'C\'est fait.' : 'Échec.'));
         break;
       }
+      case 'new-ch': closeSheet(); openChantier('', id); break;
+      case 'open-ch': closeSheet(); openChantier(id); break;
+      case 'ch-save': {
+        var cb = id && state.chantiers.filter(function (x) { return x.id === id; })[0], cn = chRead(cb || { id: id, depenses: [], docIds: [], createdAt: Date.now() });
+        if (!cn.nom && !cn.clientNom) { toast('Donne un nom au chantier ou choisis un client.'); break; }
+        if (await guard(function () { return repo.put('chantiers', cn); })) { openChantier(cn.id); if (state.route === 'clients' && state.cview === 'chantiers') renderChantiers(); toast(b.getAttribute('data-new') ? 'Chantier créé. Lie un devis et ajoute tes dépenses.' : 'Chantier mis à jour.'); }
+        break;
+      }
+      case 'ch-link': { var cl0 = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (cl0) { var cl1 = chRead(cl0); await guard(function () { return repo.put('chantiers', cl1); }); } openChLink(id); break; }
+      case 'ch-link-pick': case 'ch-unlink': {
+        var cp = state.chantiers.filter(function (x) { return x.id === id; })[0], dd = b.getAttribute('data-doc'); if (!cp) break;
+        var ids = (cp.docIds || []).filter(function (x) { return x !== dd; }); if (act === 'ch-link-pick') ids.push(dd);
+        var cp2 = Object.assign({}, cp, { docIds: ids });
+        if (await guard(function () { return repo.put('chantiers', cp2); })) { openChantier(id); toast(act === 'ch-link-pick' ? 'Document lié au chantier.' : 'Document retiré du chantier.'); }
+        break;
+      }
+      case 'ch-newdevis': {
+        var cd = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (!cd) break;
+        var cdc = state.clients.filter(function (x) { return x.id === cd.clientId; })[0], nd = newDoc('devis');
+        if (cdc) nd.client = { id: cdc.id, nom: cdc.nom, adresse: cdc.adresse || '', tel: cdc.tel || '', email: cdc.email || '' };
+        nd.chantier.adresse = cd.adresse || ''; nd.chantier.objet = cd.nom || '';
+        var cd2 = Object.assign({}, chRead(cd), { docIds: (cd.docIds || []).concat([nd.id]) });
+        await guard(function () { return repo.put('chantiers', cd2); });
+        closeSheet(); openEditor(nd, true); toast('Le devis sera lié à ce chantier dès son enregistrement.');
+        break;
+      }
+      case 'ch-dep-add': {
+        var cx = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (!cx) break;
+        var gv = function (i) { var e = $(i); return e ? e.value : ''; }, mt = num(gv('dep-montant'));
+        if (!(mt > 0)) { toast('Écris le montant de la dépense.'); break; }
+        var dep = { id: rid(), label: gv('dep-label').trim().slice(0, 80), montant: String(r2(mt)), cat: gv('dep-cat') || 'Autre', date: /^\d{4}-\d{2}-\d{2}$/.test(gv('dep-date')) ? gv('dep-date') : todayIso() };
+        var cx2 = Object.assign({}, chRead(cx), { depenses: (cx.depenses || []).concat([dep]) });
+        if (await guard(function () { return repo.put('chantiers', cx2); })) { openChantier(id); toast('Dépense ajoutée.'); }
+        break;
+      }
+      case 'ch-dep-del': {
+        var cy = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (!cy) break;
+        var cy2 = Object.assign({}, cy, { depenses: (cy.depenses || []).filter(function (x) { return x.id !== b.getAttribute('data-dep'); }) });
+        if (await guard(function () { return repo.put('chantiers', cy2); })) openChantier(id);
+        break;
+      }
+      case 'ch-del':
+        if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = 'Confirmer la suppression'; clearTimeout(armT); armT = setTimeout(function () { b.removeAttribute('data-armed'); b.textContent = 'Supprimer ce chantier'; }, 3000); break; }
+        if (await guard(function () { return repo.del('chantiers', id); })) { closeSheet(); toast('Chantier supprimé. Les devis et factures sont conservés.'); } break;
       case 'open-agenda': state.cview = 'agenda'; go('clients'); break;
       case 'new-rdv': closeSheet(); openRdv('', id); break;
       case 'open-rdv': closeSheet(); openRdv(id); break;
@@ -2304,7 +2491,15 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'rdv-del':
         if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = 'Confirmer la suppression'; clearTimeout(armT); armT = setTimeout(function () { b.removeAttribute('data-armed'); b.textContent = 'Supprimer ce rendez-vous'; }, 3000); break; }
         if (await guard(function () { return repo.del('rdvs', id); })) { closeSheet(); toast('Rendez-vous supprimé.'); } break;
-      case 'open-modeles': closeSheet(); openModeles(); break;
+      case 'welcome-save': {
+        var wn = $('wl-nom') ? $('wl-nom').value.trim() : '', wm = $('wl-metier') ? $('wl-metier').value : 'tous';
+        state.profile.metier = wm; if (wn) state.profile.nom = wn;
+        if (wm === 'peinture') state.profile.catalogue = PEINT_CAT.map(function (c) { return { id: rid(), des: c[0], unite: c[1], pu: '' }; });
+        if (await guard(function () { return repo.saveProfile(); })) { closeSheet(); renderAccueil(); toast('C\'est parti ! Crée ton premier devis.'); }
+        break;
+      }
+      case 'model-all': state.modAll = true; closeSheet(); openModeles(); break;
+      case 'open-modeles': state.modAll = false; closeSheet(); openModeles(); break;
       case 'model-use': {
         var mk = b.getAttribute('data-k') || '', mm = mk.indexOf('p-') === 0 ? MODELES[parseInt(mk.slice(2), 10)] : (state.profile.modeles || []).filter(function (x) { return 'm-' + x.id === mk; })[0];
         if (mm) startModele(mm); break;
@@ -2485,7 +2680,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       case 'logo-del': state.logo = null; loadLogo(); await guard(function () { return repo.saveLogo(); }); refreshAppearance(); break;
       case 'pv-zoom': { var w = $('pvwrap'); if (w) { w.classList.toggle('zoom'); b.textContent = w.classList.contains('zoom') ? 'Page entière' : 'Zoom'; } break; }
       case 'ed-preview': if (ed) openViewer(ed.doc); break;
-      case 'set-export': markBackup(); saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs }, null, 2)); break;
+      case 'set-export': markBackup(); saveFile('chantio-export.json', JSON.stringify({ profile: state.profile, clients: state.clients, docs: state.docs, rdvs: state.rdvs, chantiers: state.chantiers }, null, 2)); break;
     }
   }
   document.addEventListener('click', function (e) {
