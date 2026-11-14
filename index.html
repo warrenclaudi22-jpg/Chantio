@@ -1169,7 +1169,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       h += '<div class="card flat"><div class="kicker">Devis et factures liés</div>' +
         (docs.length ? '<div class="stack">' + docs.map(function (d) { return docItem(d) + '<button class="btn outline small" data-act="ch-unlink" data-id="' + esc(c.id) + '" data-doc="' + esc(d.id) + '" type="button">Retirer ' + esc(d.numero) + '</button>'; }).join('') + '</div>' : '<p class="empty">Aucun document lié.</p>') +
         '<button class="btn soft block" data-act="ch-link" data-id="' + esc(c.id) + '" type="button">Lier un devis ou une facture</button>' +
-        '<button class="btn outline block" data-act="ch-newdevis" data-id="' + esc(c.id) + '" type="button">Créer un devis pour ce chantier</button></div>';
+        '<button class="btn outline block" data-act="ch-newdevis" data-id="' + esc(c.id) + '" type="button">Créer un devis pour ce chantier</button>' + (repo.aiImprevu ? '<button class="btn block" data-act="ch-imp" data-id="' + esc(c.id) + '" type="button">' + ic('spark', 18) + ' Imprévu : devis complémentaire par l\'IA</button>' : '') + '</div>';
       var dp = (c.depenses || []).slice().sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
       h += '<div class="card flat"><div class="kicker">Dépenses · ' + fmt(chStats(c).spent) + '</div>' + chDetail(c) +
         (dp.length ? '<div class="stack">' + dp.map(function (x) { return '<div class="item" style="cursor:default"><span class="mid-col"><span class="t">' + esc(x.label || x.cat || 'Dépense') + '</span><span class="s">' + esc([x.cat, frDate(x.date)].filter(Boolean).join(' · ')) + '</span>' + (num(x.qte) > 0 ? '<span class="s">' + esc(String(x.qte).replace('.', ',') + ' ' + (x.unite || '') + (num(x.pu) > 0 ? ' × ' + pu3(num(x.pu)) + ' €' : '')) + '</span>' : '') + '</span><span class="r"><span class="amt">' + fmt(num(x.montant)) + '</span><button class="icon-btn" data-act="ch-dep-del" data-id="' + esc(c.id) + '" data-dep="' + esc(x.id) + '" type="button" aria-label="Supprimer la dépense">' + ic('x') + '</button></span></div>'; }).join('') + '</div>' : '<p class="empty">Aucune dépense saisie.</p>') +
@@ -1183,6 +1183,32 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       h += '<button class="btn danger block" data-act="ch-del" data-id="' + esc(c.id) + '" type="button">Supprimer ce chantier</button>';
     }
     openSheet(isNew ? 'Nouveau chantier' : chName(c), h);
+  }
+  function openImprevu() {
+    var im = state.imp; if (!im) return;
+    openSheet('Imprévu sur le chantier',
+      '<p class="lead" style="margin:0">Raconte l\'imprévu avec tes mots (ex. « charpente abîmée, 4 chevrons à remplacer »). L\'IA prépare le devis complémentaire.</p>' +
+      '<div id="imp-msgs" class="aimsgs"></div><div id="imp-draft"></div>' +
+      '<label class="f">Ton message<textarea id="imp-in" class="des" rows="2" placeholder="Décris l\'imprévu, les quantités, les prix…"></textarea></label>' +
+      '<button class="btn block" id="imp-send" data-act="imp-send" type="button">' + ic('spark', 18) + ' Envoyer</button><button class="btn soft block" id="imp-mic" data-act="imp-mic" type="button">Dicter</button>' +
+      '<label class="f" id="imp-dw" hidden>Décaler mes prochains rendez-vous de ce client de (jours)<input id="imp-days" inputmode="numeric" placeholder="0"></label>' +
+      '<button class="btn soft block" id="imp-create" data-act="imp-create" type="button" hidden>Créer le devis complémentaire</button>' +
+      '<p class="kicker">Le texte est traité par l\'IA gratuite de Google. Ne dicte pas le nom ni le téléphone du client.</p>');
+    impPaint();
+  }
+  function impPaint() {
+    var im = state.imp, m = $('imp-msgs'); if (!im || !m) return;
+    var h = ''; im.msgs.forEach(function (x) { h += '<div class="bub ' + (x.role === 'user' ? 'me' : 'ai') + '">' + esc(x.content) + '</div>'; });
+    if (im.busy) h += '<div class="bub ai">L\'assistant réfléchit…</div>';
+    m.innerHTML = h; m.scrollTop = m.scrollHeight;
+    var dr = im.draft, dh = '';
+    if (dr && dr.lignes.length) {
+      dh = '<div class="card flat"><div class="kicker">Devis complémentaire</div>' + (dr.objet ? '<div><b>' + esc(dr.objet) + '</b></div>' : '') +
+        dr.lignes.map(function (l) { return '<div style="margin-top:6px">' + esc(String(l.des).split('\n')[0]) + '<br><span class="kicker">' + esc(l.qte) + ' ' + esc(l.unite) + ' × ' + (l.pu ? fmt(num(l.pu)) : 'prix à compléter') + '</span></div>'; }).join('') + '</div>';
+    }
+    $('imp-draft').innerHTML = dh;
+    var s = $('imp-send'); if (s) s.disabled = im.busy;
+    var c = $('imp-create'), w = $('imp-dw'); if (c) c.hidden = !(dr && dr.lignes.length); if (w) w.hidden = !(dr && dr.lignes.length);
   }
   function openChLink(id) {
     var c = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (!c) return;
@@ -1619,7 +1645,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div class="card"><h2 class="h2">Chantier</h2><label class="f">Objet des travaux<input data-b="chantier.objet" placeholder="Ex. Réfection de la toiture" autocomplete="off"></label>' +
       '<label class="f">Adresse du chantier<input data-b="chantier.adresse" autocomplete="off"></label></div>' +
       '<div class="card"><h2 class="h2">Prestations</h2><div class="stack" id="ed-lines"></div>' +
-      '<button class="btn soft block" data-act="ed-add-line" type="button">' + ic('plus', 18) + ' Ajouter une prestation</button><button class="btn outline block small" data-act="ed-save-model" type="button">Enregistrer comme modèle</button></div>' +
+      '<button class="btn soft block" data-act="ed-add-line" type="button">' + ic('plus', 18) + ' Ajouter une prestation</button><button class="btn outline block small" data-act="ed-save-model" type="button">Enregistrer comme modèle</button>' + (repo.aiCheck && d.type === 'devis' ? '<button class="btn soft block" data-act="ed-ai-check" type="button">' + ic('spark', 18) + ' Vérifier mon devis avec l\'IA</button>' : '') + '</div>' +
       '<div class="card"><h2 class="h2">Détails</h2><div class="row2"><label class="f">Date<input type="date" data-b="date"></label>' +
       '<label class="f" id="ed-extra"></label></div>' +
       '<div class="row2"><label class="f">Remise (%)<input data-b="remise" inputmode="decimal"></label>' +
@@ -2408,7 +2434,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     var h = (ai.doc.client.nom ? '<div class="kicker">Client : ' + esc(ai.doc.client.nom) + '</div>' : '') +
       '<div id="ai-msgs" class="aimsgs"></div><div id="ai-draft"></div>' +
       '<label class="f">Ton message<textarea id="ai-in" class="des" rows="2" placeholder="Décris les travaux : surface, prestations, prix… (micro du clavier pour dicter)"></textarea></label>' +
-      '<button class="btn block" id="ai-send" data-act="ai-send" type="button">' + ic('spark', 18) + ' Envoyer</button>' +
+      '<button class="btn block" id="ai-send" data-act="ai-send" type="button">' + ic('spark', 18) + ' Envoyer</button><button class="btn soft block" id="ai-mic" data-act="ai-mic" type="button">Dicter</button>' +
       '<button class="btn soft block" id="ai-open" data-act="ai-finish" type="button" hidden>Ouvrir le devis pour vérifier</button>' +
       '<p class="kicker">Ne dicte pas le nom, l\'adresse ni le téléphone du client : l\'application les gère. Le texte est traité par l\'IA gratuite de Google.</p>';
     openSheet('Assistant devis', h); aiPaint();
@@ -2432,8 +2458,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   }
   function aiRedact(t) {
     var out = String(t);
-    state.clients.forEach(function (c) { var n = String(c.nom || '').trim(); if (n.length >= 3) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client'); });
-    var cn = String(ai.doc.client.nom || '').trim(); if (cn.length >= 3) out = out.replace(new RegExp(cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client');
+    state.clients.forEach(function (c) { var n = String(c.nom || '').trim(); if (n.length >= 3) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client'); n.split(/\s+/).forEach(function (w) { if (w.length >= 4) out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'le client'); }); });
+    var cn = String(ai && ai.doc && ai.doc.client && ai.doc.client.nom || '').trim(); if (cn.length >= 3) out = out.replace(new RegExp(cn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client');
     return out.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '').replace(/(?:\+33|0033|0)[\s.]?[1-9](?:[\s.]?\d{2}){4}/g, '');
   }
 
@@ -2489,6 +2515,60 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     d.remise = dr.remise || '0'; d.acompte = dr.acompte || '0'; d.delai = dr.delai || ''; d.notes = dr.notes || '';
     ai = null; closeSheet(); openEditor(d, true);
   }
+
+  /* ---- Dictée, relecture IA et imprévus ---- */
+  var micRec = null;
+  function micToggle(inputId, btnId) {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition, inp = $(inputId), btn = $(btnId);
+    if (!inp) return;
+    if (micRec) { try { micRec.stop(); } catch (e) { /* ignoré */ } return; }
+    if (!SR) { inp.focus(); toast('Sur cet appareil, utilise le micro du clavier (en bas à droite) pour dicter.'); return; }
+    try {
+      var r = new SR(), base = inp.value.trim() ? inp.value.trim() + ' ' : '';
+      r.lang = 'fr-FR'; r.interimResults = true; r.continuous = true;
+      r.onresult = function (e) { var t = ''; for (var i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; inp.value = base + t; };
+      var end = function () { micRec = null; var bb = $(btnId); if (bb) bb.textContent = 'Dicter'; };
+      r.onend = end; r.onerror = function (e) { end(); if (e && (e.error === 'not-allowed' || e.error === 'service-not-allowed')) toast('Micro refusé : utilise le micro du clavier.'); };
+      micRec = r; if (btn) btn.textContent = 'Arrêter la dictée'; r.start();
+    } catch (e) { micRec = null; inp.focus(); toast('Dictée indisponible : utilise le micro du clavier.'); }
+  }
+  function aiRed2(t) {
+    var out = String(t);
+    state.clients.forEach(function (c) { var n = String(c.nom || '').trim(); if (n.length >= 3) out = out.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), 'le client'); n.split(/\s+/).forEach(function (w) { if (w.length >= 4) out = out.replace(new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi'), 'le client'); }); });
+    return out.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '').replace(/(?:\+33|0033|0)[\s.]?[1-9](?:[\s.]?\d{2}){4}/g, '');
+  }
+  function aiCtx() {
+    return { catalogue: (state.profile.catalogue || []).filter(function (c) { return c.des; }).slice(0, 60).map(function (c) { return { des: aiRed2(c.des), unite: c.unite, pu: c.pu }; }),
+      defaults: { remise: state.profile.defRemise || '0', acompte: state.profile.defAcompte || '0' },
+      habitudes: aiHabits(), habitudes_doc: aiHabitsDoc(), consignes: aiRed2(state.profile.aiNotes || '') };
+  }
+  async function aiCall(messages, draft) {
+    if (!sb) return { error: 'Connecte-toi pour utiliser l\'assistant.' };
+    if (!navigator.onLine) return { error: 'Pas de réseau : l\'assistant a besoin d\'internet.' };
+    try {
+      var r = await sb.functions.invoke('assistant-devis', { body: { messages: messages, draft: draft, context: aiCtx() } });
+      if (r.error) throw r.error;
+      var d = r.data; if (!d || d.error || !d.draft || !Array.isArray(d.draft.lignes)) throw new Error((d && d.error) || 'Réponse inattendue de l\'assistant.');
+      return { reply: d.reply || '', draft: d.draft, pret: !!d.pret };
+    } catch (e) { return { error: await aiErr(e) }; }
+  }
+  repo.aiOn = function () { return !!sb && state.mode === 'db'; };
+  repo.mic = micToggle;
+  repo.aiCheck = async function (doc) {
+    var cur = { objet: doc.chantier && doc.chantier.objet || '', lignes: (doc.lignes || []).filter(function (l) { return String(l.des || '').trim(); }).map(function (l) { return { des: aiRed2(l.des), qte: String(l.qte || '1'), unite: UNITES.indexOf(l.unite) >= 0 ? l.unite : 'u', pu: String(l.pu || '') }; }),
+      remise: String(doc.remise || '0'), acompte: String(doc.acompte || '0'), delai: aiRed2(doc.delai || ''), notes: aiRed2(doc.notes || '') };
+    if (!cur.lignes.length) return { error: 'Ajoute d\'abord au moins une prestation.' };
+    var msg = 'Relis ce brouillon de devis. Ne modifie, ne supprime et ne reformule AUCUNE ligne existante, ni les prix, ni les quantités. Ajoute seulement, à la fin, les prestations qu\'un artisan oublie souvent pour ce type de travaux (protection du chantier, échafaudage ou nacelle, évacuation des déchets, nettoyage, finitions, fournitures, déplacement), seulement si elles ne sont pas déjà couvertes. Quantité 1 et unité forfait si tu ne sais pas ; laisse pu vide si tu ne connais pas le prix. Dans reponse, explique en une ou deux phrases ce que tu proposes d\'ajouter, ou dis que rien ne semble oublié.';
+    var r = await aiCall([{ role: 'user', content: msg }], cur);
+    if (r.error) return r;
+    var have = {}; cur.lignes.forEach(function (l) { have[aiNorm(l.des)] = 1; });
+    var sug = r.draft.lignes.filter(function (l) { var k = aiNorm(l.des); return k && !have[k] && !cur.lignes.some(function (x) { var a = aiNorm(x.des); return a && (a.indexOf(k) === 0 || k.indexOf(a) === 0); }); });
+    return { ok: true, reply: r.reply, suggestions: sug.slice(0, 8) };
+  };
+  repo.aiImprevu = async function (ch, msgs, draft) {
+    var m = msgs.map(function (x, i) { return { role: x.role, content: aiRed2(i === 0 && x.role === 'user' ? '[IMPRÉVU sur le chantier « ' + (ch.nom || 'en cours') + ' »] ' + x.content + ' — Prépare UNIQUEMENT le devis complémentaire (avenant) pour cet imprévu, avec « Complément : » au début de l\'objet. Ne reprends aucune autre prestation. Si la quantité ou le prix manque, pose la question.' : x.content) }; });
+    return aiCall(m, draft || aiBlank());
+  };
 
   repo.signLink = async function (docId, view) {
     if (!sb) return null;
@@ -2595,6 +2675,54 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         var pr = act === 'push-on' ? await repo.pushOn() : act === 'push-off' ? await repo.pushOff() : await repo.pushTest();
         state.pushBusy = false; state.push = await repo.pushStatus(); pushRender();
         toast(pr && pr.msg ? pr.msg : (pr && pr.ok ? 'C\'est fait.' : 'Échec.'));
+        break;
+      }
+      case 'ed-ai-check': {
+        if (!ed || !repo.aiCheck || state.aiBusy) break;
+        state.aiBusy = true; b.disabled = true; var old = b.innerHTML; b.textContent = 'L\'IA relit ton devis…';
+        var rc = await repo.aiCheck(ed.doc); state.aiBusy = false; b.disabled = false; b.innerHTML = old;
+        if (rc.error) { toast(rc.error); break; }
+        state.aiSug = rc.suggestions || [];
+        var hh = '<p class="lead" style="margin:0">' + esc(rc.reply || (state.aiSug.length ? 'Voici ce que tu as peut-être oublié.' : 'Rien d\'important ne semble oublié.')) + '</p>';
+        if (state.aiSug.length) hh += '<div class="stack">' + state.aiSug.map(function (l, i) { return '<div class="card flat" style="display:grid;gap:6px"><span>' + esc(l.des) + '</span><span class="kicker">' + esc(l.qte) + ' ' + esc(l.unite) + ' · ' + (l.pu ? fmt(num(l.pu)) : 'prix à compléter') + '</span><button class="btn soft small" data-act="ed-ai-add" data-i="' + i + '" type="button">Ajouter au devis</button></div>'; }).join('') + '</div><button class="btn block" data-act="ed-ai-add" data-i="all" type="button">Tout ajouter</button>';
+        hh += '<p class="kicker">Les lignes ajoutées n\'ont pas de prix quand l\'IA ne le connaît pas : complète-les avant d\'envoyer.</p><button class="btn outline block" data-act="sheet-close" type="button">Fermer</button>';
+        openSheet('Relecture par l\'IA', hh);
+        break;
+      }
+      case 'ed-ai-add': {
+        if (!ed || !state.aiSug) break;
+        var which = b.getAttribute('data-i'), pick = which === 'all' ? state.aiSug : [state.aiSug[+which]].filter(Boolean);
+        pick.forEach(function (l) { ed.doc.lignes.push({ id: rid(), des: l.des, qte: l.qte || '1', unite: UNITES.indexOf(l.unite) >= 0 ? l.unite : 'u', pu: l.pu || '' }); });
+        state.aiSug = which === 'all' ? [] : state.aiSug.filter(function (x, i) { return i !== +which; });
+        edLines(); edTotal(); toast(pick.length > 1 ? pick.length + ' prestations ajoutées.' : 'Prestation ajoutée.');
+        if (!state.aiSug.length) closeSheet();
+        else { b.closest('.card') && b.closest('.card').remove(); }
+        break;
+      }
+      case 'ch-imp': { var ci = state.chantiers.filter(function (x) { return x.id === id; })[0]; if (ci) { state.imp = { id: id, msgs: [], draft: null, busy: false }; openImprevu(); } break; }
+      case 'imp-mic': if (repo.mic) repo.mic('imp-in', 'imp-mic'); break;
+      case 'imp-send': {
+        var im = state.imp, ich = im && state.chantiers.filter(function (x) { return x.id === im.id; })[0], iin = $('imp-in'), it = iin ? iin.value.trim() : ''; if (!im || !ich || im.busy || !it) break;
+        im.msgs.push({ role: 'user', content: it }); iin.value = ''; im.busy = true; impPaint();
+        var ir = await repo.aiImprevu(ich, im.msgs, im.draft); im.busy = false;
+        if (ir.error) { im.msgs.pop(); var i2 = $('imp-in'); if (i2) i2.value = it; toast(ir.error); } else { im.draft = ir.draft; im.msgs.push({ role: 'assistant', content: ir.reply || 'Complément préparé.' }); }
+        impPaint(); break;
+      }
+      case 'imp-create': {
+        var jm = state.imp, jch = jm && state.chantiers.filter(function (x) { return x.id === jm.id; })[0]; if (!jm || !jch || !jm.draft || !jm.draft.lignes.length) break;
+        var jcl = state.clients.filter(function (x) { return x.id === jch.clientId; })[0], jd = newDoc('devis'), dr2 = jm.draft;
+        if (jcl) jd.client = { id: jcl.id, nom: jcl.nom, adresse: jcl.adresse || '', tel: jcl.tel || '', email: jcl.email || '' };
+        jd.chantier.adresse = jch.adresse || ''; jd.chantier.objet = dr2.objet || ('Complément : ' + (jch.nom || 'chantier'));
+        jd.lignes = dr2.lignes.map(function (l) { return { id: rid(), des: l.des, qte: l.qte || '1', unite: UNITES.indexOf(l.unite) >= 0 ? l.unite : 'u', pu: l.pu || '' }; });
+        jd.remise = '0'; jd.acompte = '0'; jd.delai = dr2.delai || ''; jd.notes = dr2.notes || '';
+        var days = Math.max(0, Math.min(60, Math.round(num(($('imp-days') || {}).value))));
+        var moved = 0, jch2 = Object.assign({}, jch, { docIds: (jch.docIds || []).concat([jd.id]) });
+        await guard(function () { return repo.put('chantiers', jch2); });
+        if (days > 0 && jch.clientId) {
+          var tt = todayIso(), todo = state.rdvs.filter(function (r) { return r.clientId === jch.clientId && r.statut !== 'fait' && (r.date || '') >= tt; });
+          for (var q = 0; q < todo.length; q++) { var nr = Object.assign({}, todo[q], { date: addDays(todo[q].date, days) }); await guard(function () { return repo.put('rdvs', nr); }); moved++; }
+        }
+        state.imp = null; closeSheet(); openEditor(jd, true); toast('Devis complémentaire prêt' + (moved ? ' · ' + moved + ' rendez-vous décalé' + (moved > 1 ? 's' : '') + ' de ' + days + ' jour' + (days > 1 ? 's' : '') : '') + '.');
         break;
       }
       case 'new-ch': closeSheet(); openChantier('', id); break;
@@ -2716,6 +2844,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         break; }
       case 'ai-skip-client': if (ai) aiChatRender(); break;
       case 'ai-send': aiSend(); break;
+      case 'ai-mic': micToggle('ai-in', 'ai-mic'); break;
       case 'ai-finish': aiFinish(); break;
       case 'wz-start': wzStart(); break;
       case 'wz-client': { var wc = state.clients.filter(function (c) { return c.id === id; })[0]; if (wc && wz) { wz.doc.client = { id: wc.id, nom: wc.nom, adresse: wc.adresse || '', tel: wc.tel || '', email: wc.email || '' }; if (!wz.doc.chantier.adresse) wz.doc.chantier.adresse = wc.adresse || ''; wz.step = 1; wzRender(); } break; }
