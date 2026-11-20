@@ -812,6 +812,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     var retard = impayees.filter(function (d) { return docStatus(d) === 'En retard'; });
     var payees = fac.filter(function (d) { return d.statut === 'Payée' && (d.paidAt || d.date || '').slice(0, 4) === y; });
     var avoirsY = fac.filter(function (d) { return isAvoir(d) && (d.date || '').slice(0, 4) === y; }), caList = payees.concat(avoirsY);
+    var rdvY = rdvPaid(y);
     var attente = docs.filter(function (d) { return d.type === 'devis' && d.statut === 'Envoyé'; });
     var recent = docs.slice().sort(function (a, b) { return (b.createdAt || 0) - (a.createdAt || 0); }).slice(0, 5);
     var p = state.profile, h = '';
@@ -819,9 +820,9 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     h += '<div class="hero"><div><div class="kicker">À encaisser</div><div class="big">' + fmt(sumFac(impayees)) + '</div>' +
       '<div class="kicker" style="margin-top:6px">' + impayees.length + ' facture' + (impayees.length > 1 ? 's' : '') + ' en attente' + (retard.length ? ' · <span style="color:var(--bad)">' + retard.length + ' en retard (' + fmt(sumFac(retard)) + ')</span>' : '') + '</div></div>' +
       '<button class="btn" data-act="' + (state.mode === 'db' ? 'ai-start' : 'wz-start') + '" type="button">' + ic('spark', 20) + ' Créer un devis</button></div>';
-    h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(caList)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + '</div></div>' +
+    h += '<div class="grid2"><div class="stat"><div class="kicker">Encaissé en ' + y + '</div><div class="mid">' + fmt(sumFac(caList) + sumRdv(rdvY)) + '</div><div class="sub">' + payees.length + ' facture' + (payees.length > 1 ? 's' : '') + ' payée' + (payees.length > 1 ? 's' : '') + (rdvY.length ? ' + ' + rdvY.length + ' rdv' : '') + '</div></div>' +
       '<div class="stat"><div class="kicker">Devis en attente</div><div class="mid">' + fmt(sumFac(attente)) + '</div><div class="sub">' + attente.length + ' devis envoyé' + (attente.length > 1 ? 's' : '') + '</div></div></div>';
-    h += rdvHome() + dashHtml(y, fac, docs) + plafondHtml(caList) + expHtml() + relanceHtml() + backupHtml();
+    h += rdvHome() + dashHtml(y, fac, docs) + plafondHtml(caList, sumRdv(rdvY)) + expHtml() + relanceHtml() + backupHtml();
     if (!docs.length || !state.clients.length || !p.siret) {
       var s1 = !!(p.nom && p.siret), s2 = state.clients.length > 0, s3 = docs.length > 0;
       h += '<div class="card"><h2 class="h2">Pour bien démarrer</h2><div class="steps">' +
@@ -911,6 +912,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         if ((d.date || '').slice(0, 4) === y && mi(d.date) >= 0) { paid[mi(d.date)] += amt; hasData = true; }
       } else if (isDue(d) && (d.date || '').slice(0, 4) === y && mi(d.date) >= 0) { pend[mi(d.date)] += amt; hasData = true; }
     });
+    rdvPaid(y).forEach(function (r) { if (mi(r.date) >= 0) { paid[mi(r.date)] += rdvPrix(r); hasData = true; } });
     if (!hasData) return '';
     var mx = 1; for (i = 0; i < 12; i++) mx = Math.max(mx, paid[i] + pend[i]);
     var best = 0; for (i = 1; i < 12; i++) if (paid[i] > paid[best]) best = i;
@@ -936,8 +938,11 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
     if (!dashData) return '';
     return '<b>' + MOIS[i] + '</b> · encaissé ' + fmt(dashData.paid[i]) + (dashData.pend[i] ? ' · à encaisser ' + fmt(dashData.pend[i]) : '');
   }
-  function plafondHtml(payees) {
-    var cap = num(state.profile.plafondCA) || 83600, ca = sumFac(payees), pct = Math.min(100, Math.round(ca / cap * 100));
+  function rdvPrix(r) { var v = num(r && r.prix); return v > 0 ? v : 0; }
+  function rdvPaid(y) { return (state.rdvs || []).filter(function (r) { return r.statut === 'fait' && rdvPrix(r) > 0 && (r.date || '').slice(0, 4) === y; }); }
+  function sumRdv(arr) { return arr.reduce(function (a, r) { return a + rdvPrix(r); }, 0); }
+  function plafondHtml(payees, extra) {
+    var cap = num(state.profile.plafondCA) || 83600, ca = sumFac(payees) + (extra || 0), pct = Math.min(100, Math.round(ca / cap * 100));
     var hot = ca >= cap * 0.8;
     return '<div class="stat"><div class="kicker">Plafond auto-entrepreneur</div><div class="mid">' + fmt(ca) + ' <span class="sub">sur ' + fmt(cap) + '</span></div>' +
       '<div class="gauge' + (hot ? ' hot' : '') + '"><i style="width:' + pct + '%"></i></div>' +
@@ -1317,6 +1322,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       '<div class="row2"><label class="f">Date<input id="rdv-date" type="date" value="' + esc(r.date) + '"></label><label class="f">Heure<input id="rdv-heure" type="time" value="' + esc(r.heure) + '"></label></div>' +
       '<div class="row2"><label class="f">Durée<select id="rdv-duree">' + opt(RDV_DUREES, r.duree) + '</select></label><label class="f">Motif<select id="rdv-objet">' + opt(RDV_OBJETS, r.objet) + '</select></label></div>' +
       '<label class="f">Adresse du rendez-vous<input id="rdv-adresse" value="' + esc(r.adresse) + '" autocomplete="off"></label>' +
+      '<label class="f">Prix du rendez-vous (€)<input id="rdv-prix" inputmode="decimal" value="' + esc(r.prix || '') + '" placeholder="Ex. 80" autocomplete="off"></label>' +
+      '<div class="sub" style="margin:-6px 0 8px">Quand tu marques le rendez-vous comme fait, ce prix compte comme payé et s\'ajoute à ton plafond. Si tu fais une facture pour ce travail, laisse vide.</div>' +
       '<label class="f">Notes<textarea id="rdv-notes" rows="2">' + esc(r.notes) + '</textarea></label>' +
       '<label class="f">Rappel (notification)<select id="rdv-rappel">' + opt(RDV_RAPPELS, r.rappel) + '</select></label>';
   }
@@ -1333,7 +1340,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
       h += '<div class="row2">' + (tel ? '<a class="btn outline small" href="tel:' + tel + '">Appeler</a>' : '<span></span>') +
         (r.adresse ? '<a class="btn outline small" target="_blank" rel="noopener" href="https://maps.apple.com/?q=' + encodeURIComponent(r.adresse) + '">Itinéraire</a>' : '<span></span>') + '</div>';
       if (tel) h += '<a class="btn outline block" href="sms:' + tel + '&body=' + encodeURIComponent(rdvSms(r)) + '">Confirmer au client par SMS</a>';
-      h += '<button class="btn outline block" data-act="rdv-done" data-id="' + esc(r.id) + '" type="button">' + (r.statut === 'fait' ? 'Remettre à prévoir' : 'Marquer comme fait') + '</button>' +
+      h += '<button class="btn outline block" data-act="rdv-done" data-id="' + esc(r.id) + '" type="button">' + (r.statut === 'fait' ? 'Remettre à prévoir' : (rdvPrix(r) ? 'Terminé : client payé ' + fmt(rdvPrix(r)) : 'Marquer comme fait')) + '</button>' +
         '<button class="btn danger block" data-act="rdv-del" data-id="' + esc(r.id) + '" type="button">Supprimer ce rendez-vous</button>';
     }
     openSheet(isNew ? 'Nouveau rendez-vous' : 'Rendez-vous', h);
@@ -1345,7 +1352,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
   function rdvRead(base) {
     var v = function (i) { var e = $(i); return e ? e.value : ''; }, cid = v('rdv-client'), c = state.clients.filter(function (x) { return x.id === cid; })[0];
     return Object.assign({}, base, { clientId: c ? c.id : '', clientNom: c ? c.nom : v('rdv-nom').trim(), date: v('rdv-date'), heure: v('rdv-heure'), duree: v('rdv-duree') || '60',
-      objet: v('rdv-objet') || 'Autre', adresse: v('rdv-adresse').trim(), notes: v('rdv-notes').trim(), rappel: v('rdv-rappel') || '60' });
+      objet: v('rdv-objet') || 'Autre', adresse: v('rdv-adresse').trim(), notes: v('rdv-notes').trim(), rappel: v('rdv-rappel') || '60', prix: v('rdv-prix').trim().replace(',', '.') });
   }
   function icsEsc(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
   function icsFold(l) { var o = []; while (l.length > 74) { o.push(l.slice(0, 74)); l = ' ' + l.slice(74); } o.push(l); return o.join('\r\n'); }
@@ -2789,7 +2796,7 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; justif
         else toast('Choisis la date et l\'heure.');
         break;
       }
-      case 'rdv-done': { var rd = state.rdvs.filter(function (x) { return x.id === id; })[0]; if (rd) { var rd2 = Object.assign({}, rd, { statut: rd.statut === 'fait' ? 'prevu' : 'fait' }); if (await guard(function () { return repo.put('rdvs', rd2); })) { closeSheet(); toast(rd2.statut === 'fait' ? 'Rendez-vous terminé.' : 'Rendez-vous remis à prévoir.'); } } break; }
+      case 'rdv-done': { var rd = state.rdvs.filter(function (x) { return x.id === id; })[0]; if (rd) { var rd2 = Object.assign({}, rd, { statut: rd.statut === 'fait' ? 'prevu' : 'fait' }); if (rd.statut !== 'fait') { var pv = $('rdv-prix'); if (pv && pv.value.trim()) rd2.prix = pv.value.trim().replace(',', '.'); } if (await guard(function () { return repo.put('rdvs', rd2); })) { closeSheet(); toast(rd2.statut === 'fait' ? (rdvPrix(rd2) ? 'Terminé : ' + fmt(rdvPrix(rd2)) + ' ajoutés à ton plafond.' : 'Rendez-vous terminé. Ajoute un prix pour le compter dans ton plafond.') : 'Rendez-vous remis à prévoir.'); } } break; }
       case 'rdv-del':
         if (b.getAttribute('data-armed') !== '1') { b.setAttribute('data-armed', '1'); b.textContent = 'Confirmer la suppression'; clearTimeout(armT); armT = setTimeout(function () { b.removeAttribute('data-armed'); b.textContent = 'Supprimer ce rendez-vous'; }, 3000); break; }
         if (await guard(function () { return repo.del('rdvs', id); })) { closeSheet(); toast('Rendez-vous supprimé.'); } break;
